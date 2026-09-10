@@ -1,0 +1,574 @@
+/* Projector-first. Every size here is picked to be legible from the back row of
+   a classroom, not from a laptop on a desk — hence clamp() everywhere and a
+   dark ground, because a projected white page washes out a room. The palette is
+   the worksheets' own (src/brand.js) inverted: same terracotta accent, warm
+   dark ground instead of warm paper, so the board reads as the same product. */
+
+:root {
+  --ground: #191512;
+  --panel: #241d19;
+  --cell: #2f2621;
+  --cell-hover: #3d312a;
+  --spent: #1f1a17;
+  --ink: #FDF8F1;
+  --accent: #B4744A;
+  --gold: #E8B461;
+  --muted: #9a8b7e;
+  --edge: #4a3c33;
+  --ok: #6FA96F;
+}
+
+* { box-sizing: border-box; }
+
+/* The board is a fixed one-screen layout, never a scrolling page: a projector
+   has no scrollbar anyone can reach mid-game, so anything that overflows is
+   simply lost. Every panel below shrinks instead of pushing. */
+/* All three need the height for the board's own `height: 100%` to resolve —
+   stop at body and the percentage falls back to content height, which lets a
+   wrapped six-team score strip push itself off the bottom of the screen. */
+html, body, #app { height: 100%; overflow: hidden; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* Setup screens size themselves to the window rather than scrolling.
+ *
+ * A projected screen is often 1280x720, and scrolling one is genuinely awkward
+ * — the teacher is at a laptop driving a display across the room. So everything
+ * on these screens is measured in vh and shrinks to fit instead.
+ *
+ * `safe center` is the safety net for the case where it still doesn't fit:
+ * plain `center` in a scrollable flex column pushes the overflow off BOTH ends,
+ * and no scrolling can bring the first line back. `safe` falls back to
+ * flex-start the moment content would overflow, so the top stays reachable.
+ */
+.centered {
+  min-height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  gap: clamp(0.4rem, 1.7vh, 1.2rem);
+  padding: clamp(0.6rem, 2.4vh, 2rem);
+  text-align: center;
+}
+
+/* Default paragraph margins are ~16px top and bottom each; across a subtitle,
+   two hints and a caption that is over 100px of a 720px screen spent on nothing. */
+.centered p { margin: 0; }
+
+.centered button {
+  padding: clamp(0.38em, 1.15vh, 0.7em) clamp(0.85em, 2.2vh, 1.4em);
+}
+
+.muted { color: var(--muted); font-size: clamp(0.72rem, 1.8vh, 1rem); }
+.error { color: #E08A7A; }
+
+h1 { font-size: clamp(1.3rem, 4.4vh, 3rem); margin: 0; }
+h2 { font-size: clamp(0.95rem, 2.5vh, 2rem); margin: 0; }
+
+button {
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--cell);
+  border: 2px solid var(--edge);
+  border-radius: 10px;
+  padding: 0.7em 1.4em;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.08s;
+}
+button:hover { background: var(--cell-hover); }
+button:active { transform: translateY(1px); }
+button.primary { background: var(--accent); border-color: var(--accent); }
+button.primary:hover { background: #c8845a; }
+button.ghost { background: transparent; }
+button.small { font-size: 0.85rem; padding: 0.45em 0.9em; }
+
+input[type="text"], input[type="number"] {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 10px;
+  padding: 0.6em 0.9em;
+}
+input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- Setup ---------- */
+
+.setup { max-width: 40rem; width: 100%; margin-inline: auto; }
+.team-rows { display: flex; flex-direction: column; gap: clamp(0.3rem, 1.1vh, 0.6rem); width: 100%; }
+.team-row { display: flex; gap: 0.6rem; align-items: center; }
+.team-row input { flex: 1; }
+.team-dot {
+  width: 1.5rem; height: 1.5rem; border-radius: 50%; flex: none;
+}
+
+/* ---------- Board ---------- */
+
+.board-screen {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(0.5rem, 1.5vw, 1.2rem);
+  gap: 0.8rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.topbar { flex: none; }
+
+/* Whose turn it is has to survive being glanced at from the back of a room by
+   a teacher who is not looking for it. Three signals carry it at once — size,
+   the team's own colour as a filled block, and a one-off pulse on handover —
+   because any single one of them gets missed. */
+.turn-pill {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  border: 3px solid;
+  border-radius: 999px;
+  padding: 0.35em 1.2em;
+  animation: turn-in 0.9s ease-out;
+}
+.turn-pill .label {
+  font-size: clamp(0.7rem, 1.1vw, 1rem);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.turn-pill .name {
+  font-size: clamp(1.2rem, 2.6vw, 2.4rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+@keyframes turn-in {
+  0%   { transform: scale(0.94); }
+  45%  { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-pill { animation: none; }
+}
+
+.board {
+  flex: 1;
+  /* Without this the grid refuses to shrink below its content height and
+     shoves the score strip off the bottom of the screen. */
+  min-height: 0;
+  display: grid;
+  gap: clamp(4px, 0.6vw, 10px);
+  grid-auto-rows: 1fr;
+}
+
+.cat {
+  background: var(--accent);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.4rem;
+  font-size: clamp(0.7rem, 1.3vw, 1.3rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+}
+
+.clue-cell {
+  background: var(--cell);
+  border: none;
+  border-radius: 10px;
+  color: var(--gold);
+  font-size: clamp(1.2rem, 3.2vw, 3.2rem);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.clue-cell:hover { background: var(--cell-hover); }
+.clue-cell[disabled] {
+  background: var(--spent);
+  color: transparent;
+  cursor: default;
+}
+
+/* ---------- Scores ---------- */
+
+.scores { display: flex; gap: 0.6rem; flex-wrap: wrap; flex: none; }
+.score {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 10px;
+  padding: 0.4rem 0.9rem;
+  font-size: clamp(0.85rem, 1.5vw, 1.3rem);
+}
+.score.active { border-width: 3px; font-weight: 800; }
+.score .pts { font-weight: 800; color: var(--gold); }
+
+/* ---------- Clue overlay ---------- */
+
+.clue-screen {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--ground);
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1rem, 3vw, 3rem);
+  gap: 1.5rem;
+  z-index: 10;
+}
+
+ /* Doubles as the "write it here" instruction: the printed team sheet is this
+    same grid, so category + value already names one square and no second
+    numbering scheme is needed. Centred and large because students read it off
+    the wall while hunting for the right box on their paper. */
+.clue-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  text-align: center;
+}
+.clue-head .where {
+  font-size: clamp(1rem, 2.4vw, 2rem);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.clue-head .where .value { color: var(--gold); }
+.clue-head .note {
+  font-size: clamp(0.7rem, 1.2vw, 1rem);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.clue-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1rem, 3vw, 2.5rem);
+  text-align: center;
+}
+/* Capped by line length, not by the window: a sentence spanning the full width
+   of a projector screen is read by turning your head. Two short lines beat one
+   very long one at the back of a classroom. */
+.prompt {
+  font-size: clamp(1.8rem, 6vw, 5rem);
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+  max-width: 26ch;
+}
+.answer {
+  font-size: clamp(1.5rem, 4.5vw, 3.5rem);
+  font-weight: 800;
+  color: var(--ok);
+  margin: 0;
+}
+.answer.hidden { visibility: hidden; }
+
+.timer {
+  font-size: clamp(2rem, 6vw, 4.5rem);
+  font-weight: 800;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.timer.done { color: #E08A7A; }
+
+.clue-controls { display: flex; flex-direction: column; gap: 0.8rem; align-items: center; flex: none; }
+.award-row { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
+.award-row button { display: flex; align-items: center; gap: 0.5rem; }
+.hint { color: var(--muted); font-size: clamp(0.7rem, 1.7vh, 0.95rem); }
+
+/* ---------- Shared top bar ---------- */
+
+/* Equal side columns so the topic sits on the true centre of the screen rather
+   than in whatever gap its neighbours leave. minmax(0, …) everywhere because a
+   long team name on the left must shrink rather than shove the title off-centre. */
+.topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+}
+.topbar > :first-child { justify-self: start; }
+.topbar > :last-child { justify-self: end; }
+
+.topic-wrap { min-width: 0; }
+.topic {
+  margin: 0;
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  /* Overwritten by the fit-to-width pass in ui.js; this is only what the first
+     paint uses before that measurement runs. */
+  font-size: 40px;
+}
+
+.final-banner {
+  display: flex;
+  justify-content: center;
+  padding: 0.4rem;
+}
+
+.turn-pill .name, .score span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Bingo: setup choices ---------- */
+
+.choice-list { display: flex; flex-wrap: wrap; gap: clamp(0.3rem, 1.1vh, 0.6rem); justify-content: center; }
+.choice { border-color: var(--edge); }
+.choice.chosen {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- Bingo: the call ---------- */
+
+.call-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.call-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+}
+.call-label {
+  margin: 0;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: clamp(0.8rem, 1.4vw, 1.2rem);
+}
+.call-text {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 6rem);
+  font-weight: 800;
+  line-height: 1.2;
+  max-width: 22ch;
+}
+.call-idle { color: var(--muted); font-size: clamp(1rem, 2vw, 1.6rem); }
+.call-audio { font-size: clamp(4rem, 14vw, 12rem); line-height: 1; }
+.call-note { margin: 0; color: var(--muted); font-size: clamp(1rem, 2vw, 1.6rem); }
+
+button.big { font-size: clamp(1rem, 2vw, 1.6rem); padding: 0.6em 1.6em; }
+
+.revealed {
+  font-size: clamp(1.2rem, 2.4vw, 2rem);
+  font-weight: 800;
+  color: var(--gold);
+  padding: 0 0.6em;
+}
+
+/* ---------- Bingo: card check ---------- */
+
+.card-number { width: 6rem; font-size: clamp(1rem, 2vw, 1.6rem); text-align: center; }
+
+.check-result { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+
+.verdict {
+  font-size: clamp(1.6rem, 4vw, 3.5rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.verdict.win { color: var(--ok); }
+.verdict.lose { color: #E08A7A; }
+
+.clue-body.check {
+  justify-content: flex-start;
+  gap: 1rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Square, and bounded by the space actually left over rather than by a fixed
+   slice of the viewport. A 3x3 fills the same box as a 4x4, so a width-based
+   size makes the smaller grid the bigger drawing and pushes the panel into a
+   scrollbar. Height first, width follows the aspect ratio. */
+.card-grid {
+  display: grid;
+  gap: 6px;
+  aspect-ratio: 1;
+  height: min(46vh, 100%);
+  width: auto;
+  max-width: min(80vw, 46vh);
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.card-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.3rem;
+  border: 2px solid var(--edge);
+  border-radius: 8px;
+  background: var(--cell);
+  font-size: clamp(0.6rem, 1.4vw, 1.2rem);
+  line-height: 1.15;
+  overflow: hidden;
+}
+/* Called squares are filled, not ticked: from the back of the room a teacher
+   needs to read the pattern, not hunt for marks. */
+.card-cell.marked {
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+
+/* ---------- Bingo: pattern choice ---------- */
+
+.pattern-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.2rem, 0.7vh, 0.4rem);
+}
+.pattern-name { font-weight: 800; }
+.pattern-note { font-size: 0.8em; color: var(--muted); font-weight: 400; }
+.pattern-choice.chosen .pattern-note { color: var(--ink); }
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  width: clamp(1.9rem, 5.2vh, 3.4rem);
+}
+.mini-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--edge);
+}
+.mini-cell.on { background: var(--gold); }
+
+/* ---------- Bingo: in-game controls ---------- */
+
+.rate-row, .mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.rate-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.rate-label.soft { opacity: 0.65; text-transform: none; letter-spacing: 0; }
+
+/* Revealed only when a class is stuck, so it should read as a helper line and
+   not compete with the speaker glyph above it. */
+.audio-text {
+  font-size: clamp(1.2rem, 3vw, 2.6rem);
+  color: var(--gold);
+  max-width: 26ch;
+}
+
+/* ---------- Bingo: called words ---------- */
+
+.clue-body.check.called { justify-content: center; }
+
+.called-list {
+  list-style: decimal;
+  text-align: left;
+  width: min(48rem, 88vw);
+  columns: 3;
+  column-gap: 2.5rem;
+  margin: 0;
+  padding-left: 2rem;
+  font-size: clamp(0.9rem, 1.8vw, 1.5rem);
+}
+.called-item { break-inside: avoid; padding: 0.15em 0; }
+.called-item.latest { color: var(--gold); font-weight: 800; }
+
+
+/* display:flex on the inner list would otherwise beat the hidden attribute. */
+[hidden] { display: none !important; }
+
+.mix-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.25rem, 1vh, 0.5rem);
+  padding: clamp(0.45rem, 1.6vh, 0.9rem) clamp(0.7rem, 2vh, 1.2rem);
+  border: 2px dashed var(--edge);
+  border-radius: 12px;
+}
+.mix-box .hint { margin: 0; }
+
+/* The English of a sentence clue: a scaffold shown on request, so it reads as
+   support rather than as the answer. */
+.call-en-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+.call-en {
+  margin: 0; font-size: clamp(1rem, 2.6vw, 2.2rem); color: var(--muted);
+  max-width: 26ch; font-style: italic;
+}
+
+/* The one square worth double. Loud on purpose — it is the surprise. */
+.daily-banner {
+  position: absolute; top: 0; left: 0; right: 0;
+  background: var(--gold); color: #1b1714; text-align: center;
+  font-weight: 800; letter-spacing: 0.18em;
+  font-size: clamp(0.9rem, 2.2vw, 1.8rem); padding: 0.35em;
+}
+
+/* ---------- Vocabulary flash ---------- */
+
+/* Wide columns on purpose.
+   auto-fit with a narrow minimum packed thirty words into ten thin columns and
+   three rows, leaving most of the screen empty and the type too small to read
+   from the back of a room. A wide minimum forces fewer, fuller columns, and the
+   cap stops five words stretching across the whole wall. */
+.vocab-body { justify-content: center; }
+.vocab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 45vw), 1fr));
+  gap: clamp(0.4rem, 2vh, 1.2rem) clamp(1rem, 3vw, 3rem);
+  width: min(100%, 68rem);
+  margin: 0 auto;
+}
+.vocab-item {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  border-bottom: 1px solid var(--edge); padding-bottom: 0.3em;
+}
+.vocab-es { font-size: clamp(1rem, 3.2vh, 2.4rem); font-weight: 700; }
+/* Muted and italic: support, not a second answer to read. */
+.vocab-en { font-size: clamp(0.75rem, 2.1vh, 1.5rem); color: var(--muted); font-style: italic; }
