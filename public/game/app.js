@@ -2,13 +2,12 @@
  *
  * A room is one published packet plus whatever games its data supports. The URL
  * carries the code printed on the worksheet — /j/DEMO1 — and everything after
- * that is a single static fetch. Nothing here needs a session, an account or a
- * round trip once the payload is in hand, which is what lets the whole site be
- * a folder copied into Eat Well Planner's public directory.
+ * that is a single fetch of the room's payload. Nothing here needs a session,
+ * an account or a round trip once the payload is in hand.
  *
- * Asset and payload paths are absolute under /j, which is where this folder
- * lives in the Laravel app's public directory. Relative paths would break the
- * moment a room URL picked up a trailing slash.
+ * Asset paths are absolute under /game, where this folder lives, and the
+ * payload path is absolute under /j, where Laravel routes it. Relative paths
+ * would break the moment a room URL picked up a trailing slash.
  */
 (function () {
   'use strict';

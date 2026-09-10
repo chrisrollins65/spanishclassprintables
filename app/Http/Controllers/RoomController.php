@@ -19,9 +19,9 @@ use Symfony\Component\HttpFoundation\Response;
  * would have to be remembered separately — and never under public/, which each
  * release replaces.
  *
- * Second, the page itself is static. public/j is plain HTML and JS served by
- * nginx without touching PHP; this controller exists only for the pretty room
- * URL, which is not a file on disk, and for the payload behind it.
+ * Second, the page itself is static. public/game is plain HTML and JS served
+ * by the web server without touching PHP; this controller exists only for the
+ * pretty room URL, which is not a file on disk, and for the payload behind it.
  */
 class RoomController extends Controller
 {
@@ -51,8 +51,8 @@ class RoomController extends Controller
     }
 
     /**
-     * The room's data. Fetched by the shell as `rooms/{CODE}.json`, relative to
-     * /j/, so this path has to match what the page asks for.
+     * The room's data. Fetched by the shell as `/j/rooms/{CODE}.json`, so this
+     * path has to match what the page asks for.
      */
     public function payload(string $code): Response
     {
@@ -103,7 +103,7 @@ class RoomController extends Controller
 
         return response()->json([
             'code' => $code,
-            'url'  => url("/j/{$code}"),
+            'url' => url("/j/{$code}"),
             'bytes' => strlen($json),
         ]);
     }

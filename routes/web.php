@@ -10,12 +10,13 @@ Route::get('/', function () {
 /*
  * Classroom game rooms.
  *
- * The static page and its assets live in public/j and are served by nginx
- * without reaching PHP. Only these three paths need the framework: the pretty
+ * The game shell and its assets live in public/game and are served by the web
+ * server without reaching PHP. Only these paths need the framework: the pretty
  * room URL, which is not a file on disk; the payload behind it, which lives in
- * storage so it survives deploys; and the builder's publish call.
+ * the database so it survives deploys; and the builder's publish call. Nothing
+ * may exist on disk at public/j, or it would shadow these routes.
  *
- * Asset paths in the page are absolute (/j/...) rather than relative, so a
+ * Asset paths in the page are absolute (/game/...) rather than relative, so a
  * trailing slash on a room URL cannot resolve them one directory too deep. A
  * redirect route would not work here anyway: Laravel normalises the trailing
  * slash away, so /j/{code}/ and /j/{code} are the same route and the redirect

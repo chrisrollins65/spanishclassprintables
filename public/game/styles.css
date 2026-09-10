@@ -211,7 +211,10 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- Scores ---------- */
 
-.scores { display: flex; gap: 0.6rem; flex-wrap: wrap; flex: none; }
+/* Centred, like the award buttons: with seven or eight teams the strip wraps
+   on a smaller projector, and a second row hugging the left edge reads as
+   something that ran out of room rather than a scoreboard. */
+.scores { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; flex: none; }
 .score {
   display: flex;
   align-items: center;

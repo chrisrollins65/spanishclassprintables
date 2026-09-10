@@ -1,58 +1,72 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Spanish Class Printables
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+This application powers the online side of Spanish Class Printables: printable Spanish class packets whose worksheets
+carry a room code and QR code. Scanning the code opens a classroom game room (Jeopardy, Bingo) built from that
+packet's content.
 
-## About Laravel
+Built on [Laravel](https://laravel.com/), with plain HTML and JavaScript for the game pages.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Environment files
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Encrypted environment files are included in this repo. You will need a special key to decrypt them.
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+php artisan env:decrypt --key=DECRYPT_KEY_HERE
+php artisan env:decrypt --env=development --key=DECRYPT_KEY_HERE
+php artisan env:decrypt --env=production --key=DECRYPT_KEY_HERE
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+If you ever change variables in those files, remember to re-encrypt them. With `ENCRYPTION_KEY` set in your `.env`, one
+command re-encrypts every environment file that exists:
 
-## Contributing
+```bash
+php artisan env:encrypt-all
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Layout of environments:
 
-## Code of Conduct
+- `.env` - default environment, for local use without docker or virtual machines or anything
+- `.env.development` - for use locally at `spanishclassprintables.local`
+- `.env.production` - for use in production at `spanishclassprintables.com`
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## How rooms work
 
-## Security Vulnerabilities
+A room is one published packet, keyed by the short code printed on its worksheets (e.g. `/j/DEMO1`).
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+- **Publishing** - the local packet builder pushes a room to `POST /api/internal/room`, authenticated with the
+  `X-Room-Secret` header. It must match `ROOM_PUBLISH_SECRET`; publishing is refused outright when that is empty.
+  Publishing the same code again replaces the room.
+- **Playing** - `/j/{code}` serves the static shell at [public/game/room.html](public/game/room.html), which fetches its
+  data from `/j/rooms/{code}.json`. Everything after that runs in the browser with no session or account.
 
-## License
+See [RoomController.php](app/Http/Controllers/RoomController.php) for the details.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Code design
+
+Most of the code here is based on how things are done in Laravel. But here are some design considerations to keep in
+mind.
+
+### Rooms are never deleted
+
+A teacher may print a packet today and hand it out years from now, and a dead link on a paid product is a refund and a
+bad review. So there is deliberately no way to delete a room anywhere in the application - please keep it that way.
+
+For the same reason, room payloads live in the database (which is backed up) and never under `public/`, which each
+release replaces.
+
+### Nothing may exist on disk at `public/j`
+
+The game shell and its assets live in `public/game`, not `public/j`. A real `public/j` directory would be resolved by
+the web server before Laravel, and every room URL would 404. Asset paths in the game pages are absolute (`/game/...`)
+so a trailing slash on a room URL cannot break them.
+
+### Automated Tests
+
+Tests run against an in-memory SQLite database (see [phpunit.xml](phpunit.xml)), so they will not touch your local
+database.
+
+```bash
+php artisan test --compact
+```
+
+Please write tests for any new code you add.

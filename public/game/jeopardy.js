@@ -16,7 +16,13 @@
 
   // Enough hues to stay distinguishable on a washed-out projector; six teams is
   // already more groups than a class of thirty splits into comfortably.
-  const TEAM_COLORS = ['#B4744A', '#5F8FB4', '#6FA96F', '#C4954A', '#9B6FA9', '#B45F6F'];
+  /* One colour per team, and so the team limit: setup stops adding rows when
+   * these run out. Eight, for a class split into pairs or threes. The two added
+   * last sit in the widest hue gaps the first six left — teal between the green
+   * and the blue, gold between the amber and the green — so no two neighbours
+   * on the score strip read as the same team from the back of the room.
+   */
+  const TEAM_COLORS = ['#B4744A', '#5F8FB4', '#6FA96F', '#C4954A', '#9B6FA9', '#B45F6F', '#3FA7A2', '#D9BE45'];
   const DEFAULT_SECONDS = 45;
 
   const { el, englishToggle, canSpeakSpanish, speak } = window.RoomUI;
