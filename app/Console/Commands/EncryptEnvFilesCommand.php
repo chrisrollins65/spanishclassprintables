@@ -15,8 +15,9 @@ class EncryptEnvFilesCommand extends Command
     {
         $key = config('app.env_encryption_key');
 
-        if (!$key) {
+        if (! $key) {
             $this->error('ENCRYPTION_KEY is not set in your configuration.');
+
             return self::FAILURE;
         }
 
@@ -26,8 +27,9 @@ class EncryptEnvFilesCommand extends Command
         foreach ($envs as $env) {
             $envPath = base_path($env === 'local' ? '.env' : ".env.$env");
 
-            if (!file_exists($envPath)) {
+            if (! file_exists($envPath)) {
                 $this->warn("Skipping {$env}: file not found at {$envPath}");
+
                 continue;
             }
 
@@ -48,7 +50,7 @@ class EncryptEnvFilesCommand extends Command
             base_path('artisan'),
             'env:encrypt',
             '--force',
-            '--key=' . $key,
+            '--key='.$key,
         ];
 
         if ($env !== 'local') {
@@ -60,8 +62,9 @@ class EncryptEnvFilesCommand extends Command
         $process->setWorkingDirectory(base_path());
         $process->run();
 
-        if (!$process->isSuccessful()) {
-            $this->error("Failed to encrypt {$env}: " . $process->getErrorOutput());
+        if (! $process->isSuccessful()) {
+            $this->error("Failed to encrypt {$env}: ".$process->getErrorOutput());
+
             return false;
         }
 
