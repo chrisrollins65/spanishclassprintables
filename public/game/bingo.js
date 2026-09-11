@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  const { el, englishToggle, canSpeakSpanish, speakable } = window.RoomUI;
+  const { el, englishToggle, canSpeakSpanish, speakable, displayFace, openVocab, reviewButton, howToButton } = window.RoomUI;
   const fx = window.RoomFX;
 
   // The drawn ball's colour steps through these, the way a real bingo drum's
@@ -88,16 +88,6 @@
     { key: 'normal', label: 'Normal', value: 1 },
   ];
   const DEFAULT_RATE = 0.75;
-
-  /* The article is a separate field on an item, so it can be left off a gap
-   * sentence and off words that never take one. The CARD, though, prints the
-   * article — gender is half of what a bingo card teaches — so anything that
-   * has to match a card cell has to put it back the same way the printer did.
-   */
-  function displayFace(item) {
-    if (!item) return '';
-    return [item.article, item.face].filter(Boolean).join(' ').trim();
-  }
 
   let root, room, game, state;
   // Set once the teacher touches the setup form, so the late-arriving voice
@@ -258,8 +248,50 @@
     };
 
     wrap.append(el('h2', null, 'Pistas'), modeBox, hint, mixBox,
-      el('h2', null, 'Para ganar'), patternBox, start);
+      el('h2', null, 'Para ganar'), patternBox,
+      el('div', 'award-row', null, [
+        // Reads `pattern` when it opens, so the rule shown is the one just picked.
+        howToButton(root, () => howToSteps(pattern)), reviewButton(root, game.items), start,
+      ]));
     root.append(wrap);
+  }
+
+  /* The rules as this game plays them (see openHowTo in ui.js). `pattern` is
+   * the winning shape, so the rule on screen is the one Comprobar cartón will
+   * apply. */
+  function howToSteps(pattern) {
+    const free = (game.cards || []).some(card => card.grid.some(row => row.includes(null)));
+    const win = pattern === 'blackout'
+      ? { es: '¿Tienes todo el cartón marcado? ¡Grita «¡Bingo!»!', en: 'Is your whole card marked? Shout “¡Bingo!”' }
+      : { es: '¿Tienes una línea: fila, columna o diagonal? ¡Grita «¡Bingo!»!', en: 'Got a line: a row, a column or a diagonal? Shout “¡Bingo!”' };
+    return [
+      {
+        icon: '🎟️',
+        es: 'Cada estudiante tiene un cartón. Todos los cartones son diferentes.',
+        en: 'Everyone has a bingo card. Every card is different.',
+      },
+      {
+        icon: '🔎',
+        es: 'La pantalla da una pista, nunca la palabra. ¿Qué palabra es?',
+        en: 'The screen gives a clue, never the word itself. Which word is it?',
+      },
+      {
+        icon: '✏️',
+        es: '¿Tienes esa palabra en tu cartón? ¡Márcala!',
+        en: 'Is that word on your card? Mark it!',
+      },
+      free && {
+        icon: '⭐',
+        es: 'La casilla GRATIS ya está marcada.',
+        en: 'The GRATIS (free) square counts as marked already.',
+      },
+      { icon: '🙋', ...win },
+      {
+        icon: '✅',
+        es: 'Di el número de tu cartón, y la pantalla comprueba si gana de verdad.',
+        en: 'Say your card\'s number, and the screen checks whether it really wins.',
+      },
+    ].filter(Boolean);
   }
 
   /* Which clue types the mix draws from.
@@ -329,7 +361,8 @@
     );
 
     const controls = el('div', 'award-row');
-    controls.append(fx.muteButton(), calledButton(), checkButton(), resetButton());
+    controls.append(fx.muteButton(), howToButton(root, () => howToSteps(state.pattern), { compact: true }),
+      calledButton(), checkButton(), resetButton());
 
     screen.append(window.RoomUI.topBar(progress, title(), controls));
 
@@ -472,6 +505,14 @@
       };
       row.append(reveal);
     }
+
+    // Down here with the words rather than up in the top bar: this is where the
+    // teacher's hand is between calls, and the top bar's corner is already full.
+    // Not primary — the screenshot pass draws the first word by pressing this
+    // bar's primary button.
+    const vocab = el('button', 'small', 'Vocabulario');
+    vocab.onclick = () => openVocab(root, game.items, { moment: 'reminder' });
+    row.append(vocab);
 
     bar.append(row);
     if (call) bar.append(modeSwitch());

@@ -61,7 +61,7 @@
   // How long the "last seconds" of the writing timer are: ticking, and red.
   const URGENT_SECONDS = 5;
 
-  const { el, englishToggle, canSpeakSpanish, speak } = window.RoomUI;
+  const { el, englishToggle, canSpeakSpanish, speak, openVocab, reviewButton, howToButton } = window.RoomUI;
   const fx = window.RoomFX;
 
   let root, room, game, state, timer;
@@ -185,8 +185,70 @@
       renderBoard({ intro: true });
     };
 
-    wrap.append(addBtn, start);
+    wrap.append(addBtn, el('div', 'award-row', null, [
+      howToButton(root, () => howToSteps(null)), reviewButton(root, bankItems()), start,
+    ]));
     root.append(wrap);
+  }
+
+  /* The rules as this room plays them (see openHowTo in ui.js). `playing` is
+   * the game in progress, or null on the setup screen, where there is none yet
+   * and the Daily Double is only a question of whether the board has room for
+   * one.
+   *
+   * The listening clues are left out on purpose: the clue screen says so itself
+   * the moment one comes up, and a rule for it here is one more line to read
+   * before anyone has played.
+   */
+  function howToSteps(playing) {
+    const daily = playing ? playing.daily : pickDailyCell();
+    return [
+      {
+        icon: '👥',
+        es: `Formen equipos: de 2 a ${TEAM_COLORS.length}. Cada equipo tiene una hoja de respuestas.`,
+        en: `Make teams, 2 to ${TEAM_COLORS.length} of them. Each team has an answer sheet.`,
+      },
+      {
+        icon: '🎯',
+        es: 'El equipo al que le toca elige una categoría y un valor.',
+        en: 'The team whose turn it is picks a category and a value.',
+      },
+      {
+        icon: '✏️',
+        es: 'Todos los equipos escriben la respuesta en su hoja, no solo el equipo que eligió.',
+        en: 'Every team writes the answer on its sheet, not just the team that picked.',
+      },
+      // Not something the site can enforce — the answers are on paper — but
+      // without it the teams reading out later just copy whatever the first
+      // team said.
+      {
+        icon: '✋',
+        es: 'Cuando todos terminan de escribir, ¡lápices abajo! Ya nadie puede cambiar su respuesta.',
+        en: 'When everyone has finished writing, pencils down! Nobody can change their answer after that.',
+      },
+      {
+        icon: '🗣️',
+        es: 'Primero lee el equipo que eligió. Si falla, lee el siguiente. ¡El primero que acierta gana los puntos!',
+        en: 'The team that picked reads its answer first. If it is wrong, the next team reads theirs. The first team to get it right wins the points!',
+      },
+      daily && {
+        icon: '💰',
+        es: 'Una casilla secreta es el Doble Diario: ¡vale el doble!',
+        en: 'One secret square is the Daily Double: it is worth double!',
+      },
+      // "Nobody loses points" is for the teacher who knows the TV show, where a
+      // wrong answer costs its value; here nothing ever subtracts.
+      {
+        icon: '🔄',
+        es: 'Después de cada pista, le toca al siguiente equipo. Nadie pierde puntos.',
+        en: 'After every clue it is the next team\'s turn, whoever got it right. Nobody ever loses points.',
+      },
+      {
+        icon: '🏆',
+        es: 'Cuando no quedan casillas, gana el equipo con más dinero.',
+        en: 'When the board is empty, the team with the most money wins.',
+      },
+    ].filter(Boolean);
   }
 
   function mascotFor(emoji) {
@@ -275,7 +337,7 @@
     const screen = el('section', 'board-screen');
 
     const controls = el('div', 'award-row');
-    controls.append(fx.muteButton(), vocabButton(), resetButton());
+    controls.append(fx.muteButton(), howToButton(root, () => howToSteps(state), { compact: true }), vocabButton(), resetButton());
 
     // A finished game's board is all empty squares, so the standings take its
     // place — and whose turn it is no longer means anything.
@@ -484,75 +546,18 @@
     return strip;
   }
 
-  /* The word list, flashed on the wall.
-   *
-   * The class already has these on paper — the reference page is the first
-   * sheet of the pack — so this is not about access. It is about transience: a
-   * list up for five seconds is a memory exercise, a sheet on the desk is a
-   * lookup table, and only one of those is worth doing mid-game.
-   *
-   * English stays hidden until asked for. The Spanish alone is a reminder; the
-   * English turns any clue into a thirty-way multiple choice, which is a much
-   * bigger concession and should be a deliberate one.
-   */
+  // The word list as a mid-game reminder, from the board and from every clue
+  // (see openVocab in ui.js). A room published without its item bank has no
+  // list to show, and says so by greying the button rather than hiding it.
   function vocabButton(label) {
     const btn = el('button', 'small', label || 'Vocabulario');
     btn.disabled = !bankItems().length;
-    btn.onclick = openVocab;
+    btn.onclick = () => openVocab(root, bankItems(), { moment: 'reminder' });
     return btn;
   }
 
   function bankItems() {
     return Array.isArray(room.items) ? room.items : [];
-  }
-
-  function openVocab() {
-    const items = bankItems();
-    if (!items.length) return;
-
-    const screen = el('section', 'clue-screen vocab-screen');
-    const head = el('div', 'clue-head');
-    head.append(el('div', 'where', 'Vocabulario'),
-      el('div', 'note', 'Míralo bien — desaparece enseguida'));
-
-    const grid = el('div', 'vocab-grid');
-    items.forEach(item => {
-      const cell = el('div', 'vocab-item');
-      cell.append(el('span', 'vocab-es', item.face));
-      const en = el('span', 'vocab-en', item.en || '');
-      en.hidden = true;
-      cell.append(en);
-      grid.append(cell);
-    });
-
-    const english = el('button', 'small', 'Ver en inglés');
-    let showing = false;
-    english.onclick = () => {
-      showing = !showing;
-      grid.querySelectorAll('.vocab-en').forEach(e => { e.hidden = !showing; });
-      english.textContent = showing ? 'Ocultar el inglés' : 'Ver en inglés';
-    };
-
-    const close = el('button', 'primary', 'Cerrar');
-    close.onclick = () => {
-      // The capture flag has to match the one it was added with, or the
-      // listener survives and swallows every later Escape.
-      document.removeEventListener('keydown', vocabEsc, true);
-      screen.remove();
-    };
-
-    function vocabEsc(e) {
-      if (e.key === 'Escape') {
-        e.stopImmediatePropagation();
-        close.click();
-      }
-    }
-    // Captured, so Escape closes the word list rather than the clue underneath.
-    document.addEventListener('keydown', vocabEsc, true);
-
-    screen.append(head, el('div', 'clue-body vocab-body', null, [grid]),
-      el('div', 'clue-controls', null, [el('div', 'award-row', null, [english, close])]));
-    root.append(screen);
   }
 
   // Two-click confirm rather than a browser dialog: a modal on a projector is a

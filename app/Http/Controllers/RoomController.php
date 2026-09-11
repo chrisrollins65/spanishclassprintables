@@ -21,7 +21,8 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Second, the page itself is static. public/game is plain HTML and JS served
  * by the web server without touching PHP; this controller exists only for the
- * pretty room URL, which is not a file on disk, and for the payload behind it.
+ * pretty room URL, which is not a file on disk, for the payload behind it, and
+ * to put a version on the shell's asset URLs (see versionAssets).
  */
 class RoomController extends Controller
 {
@@ -46,8 +47,31 @@ class RoomController extends Controller
         $shell = public_path('game/room.html');
         abort_unless(is_file($shell), 404);
 
-        return response(file_get_contents($shell))
+        return response($this->versionAssets(file_get_contents($shell)))
             ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * Stamp each /game/ script and stylesheet with its file's modified time.
+     *
+     * The files are served bare, and a browser keeps a bare file for as long as
+     * it guesses it is still fresh — hours, for one that has not changed in
+     * days. The games call into ui.js, so a release that changes both could run
+     * a new bingo.js against last week's ui.js and die on the setup screen in
+     * front of a class. The shell itself is never cached, so a version on every
+     * URL in it is enough to make each release load as one piece.
+     */
+    private function versionAssets(string $html): string
+    {
+        return preg_replace_callback(
+            '#(src|href)="/game/([\w.-]+\.(?:js|css))"#',
+            function (array $m): string {
+                $file = public_path('game/'.$m[2]);
+
+                return is_file($file) ? sprintf('%s="/game/%s?v=%d"', $m[1], $m[2], filemtime($file)) : $m[0];
+            },
+            $html
+        );
     }
 
     /**

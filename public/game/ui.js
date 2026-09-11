@@ -102,15 +102,24 @@
     return String(text || '').replace(/_{2,}/g, ',');
   }
 
+  /* Resolves when the voice has finished — or been cut off by the next speak(),
+   * which is also an end. The ceiling is for Chrome, where some voices never
+   * fire `end` at all: anything waiting on the word (the flashcards' automatic
+   * run) would otherwise wait forever.
+   */
   function speak(text, rate) {
-    if (!hasSpeech() || !text) return;
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(speakable(text));
-    const voice = spanishVoice();
-    if (voice) utter.voice = voice;
-    utter.lang = voice ? voice.lang : 'es-ES';
-    utter.rate = rate == null ? DEFAULT_RATE : rate;
-    window.speechSynthesis.speak(utter);
+    return new Promise(resolve => {
+      if (!hasSpeech() || !text) return resolve();
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(speakable(text));
+      const voice = spanishVoice();
+      if (voice) utter.voice = voice;
+      utter.lang = voice ? voice.lang : 'es-ES';
+      utter.rate = rate == null ? DEFAULT_RATE : rate;
+      const ceiling = setTimeout(resolve, 1500 + String(text).length * 150);
+      utter.onend = utter.onerror = () => { clearTimeout(ceiling); resolve(); };
+      window.speechSynthesis.speak(utter);
+    });
   }
 
   /* A translation shown on request.
@@ -131,9 +140,500 @@
     return wrap;
   }
 
+  /* A word as the printed pages show it: with its article.
+   *
+   * The article is a separate field on an item, so it can be left off a gap
+   * sentence and off words that never take one. Everything that shows the word
+   * itself puts it back — gender is half of what the word list teaches, and a
+   * bingo card cell has to match the card the printer made.
+   */
+  function displayFace(item) {
+    if (!item) return '';
+    return [item.article, item.face].filter(Boolean).join(' ').trim();
+  }
+
+  /* The whole word list on the wall, in both games, at two moments.
+   *
+   * Before a game ('review') it is the lesson: the class goes through every
+   * word, hears it, and says it back. That is the job the printed Lista de
+   * Palabras used to do, and on the screen nobody has to print it. English shows
+   * from the start, because this is where the meaning is being learned.
+   *
+   * During a game ('reminder') it is a nudge for a child who has forgotten a
+   * word, and the Spanish alone does that. English stays one tap away: beside
+   * the Spanish it answers an English clue outright, which the teacher may well
+   * want for a class that is struggling — but as their call, not the default.
+   *
+   * Every word is a button that says itself. Hearing a word and repeating it
+   * is how a class learns it, and that works as well mid-game as before it.
+   * Words said once stay marked, so a teacher going round the list can see
+   * where they got to.
+   *
+   * The review also offers the words one at a time, as flashcards (flashDeck
+   * below). Only the review: mid-game the list is meant to be up and gone again
+   * in seconds, and a deck of thirty cards is not that.
+   */
+  function openVocab(container, items, opts = {}) {
+    if (!items || !items.length) return;
+    const review = opts.moment === 'review';
+    const audible = canSpeakSpanish();
+    // Shared by both views, so a word said on a card is marked in the list too.
+    const heard = new Set();
+    let showing = review;
+    // Built on first use and kept, so going to the list and back returns to the
+    // same card rather than to the first one.
+    let deck = null;
+
+    const screen = el('section', 'clue-screen vocab-screen');
+    const note = el('div', 'note');
+    const head = el('div', 'clue-head');
+    head.append(el('div', 'where', review ? 'Repasemos el vocabulario' : 'Vocabulario'), note);
+    const body = el('div', 'clue-body vocab-body');
+    const controls = el('div', 'clue-controls');
+
+    function say(i) {
+      heard.add(i);
+      return speak(displayFace(items[i]));
+    }
+
+    const close = el('button', 'primary', 'Cerrar');
+    close.onclick = () => {
+      // The capture flag has to match the one it was added with, or the
+      // listener survives and swallows every later key.
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('keyup', onKey, true);
+      if (deck) deck.stop();
+      screen.remove();
+    };
+
+    function showList() {
+      if (deck) deck.stop();
+      note.textContent = review
+        ? (audible ? 'Toca una palabra para oírla y repítanla juntos' : 'Lean cada palabra en voz alta')
+        : 'Míralo bien — desaparece enseguida';
+
+      const grid = el('div', 'vocab-grid');
+      items.forEach((item, i) => {
+        const cell = el(audible ? 'button' : 'div', 'vocab-item' + (heard.has(i) ? ' heard' : ''));
+        cell.append(el('span', 'vocab-es', displayFace(item)));
+        const en = el('span', 'vocab-en', item.en || '');
+        en.hidden = !showing;
+        cell.append(en);
+        if (audible) {
+          cell.onclick = () => {
+            say(i);
+            cell.classList.add('heard');
+          };
+        }
+        grid.append(cell);
+      });
+
+      const english = el('button', 'small', showing ? 'Ocultar el inglés' : 'Ver en inglés');
+      english.onclick = () => {
+        showing = !showing;
+        grid.querySelectorAll('.vocab-en').forEach(e => { e.hidden = !showing; });
+        english.textContent = showing ? 'Ocultar el inglés' : 'Ver en inglés';
+      };
+
+      const row = el('div', 'award-row', null, [english]);
+      if (review) {
+        const toCards = el('button', 'small', '🃏 Una por una');
+        toCards.onclick = showCards;
+        row.append(toCards);
+      }
+      row.append(close);
+      body.replaceChildren(grid);
+      controls.replaceChildren(row);
+    }
+
+    function showCards() {
+      deck = deck || flashDeck(items, {
+        audible,
+        say,
+        onVoice: voiced => { note.textContent = voiced ? 'Escuchen y repitan' : 'Lean cada palabra en voz alta'; },
+      });
+      const toList = el('button', 'small', '☰ Ver la lista');
+      toList.onclick = showList;
+      body.replaceChildren(deck.node);
+      controls.replaceChildren(el('div', 'award-row', null, [toList, close]));
+      deck.show();
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        if (e.type === 'keydown') {
+          e.stopImmediatePropagation();
+          close.click();
+        }
+        return;
+      }
+      if (deck && deck.node.isConnected) deck.key(e);
+    }
+    // Captured, so Escape closes the word list rather than the clue underneath.
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('keyup', onKey, true);
+
+    screen.append(head, body, controls);
+    container.append(screen);
+    showList();
+  }
+
+  /* How long the automatic run gives the class at each step.
+   *
+   * REPEAT is after the voice, for the whole room to say the word back — long
+   * enough for "la bicicleta" in chorus without the next card landing on top of
+   * it. THINK is before an answer, on a card that starts in English: a moment
+   * to work out the Spanish and call it out before the card turns. LOOK is the
+   * English showing under a Spanish word before moving on.
+   */
+  const FLASH_REPEAT_MS = 3000;
+  const FLASH_THINK_MS = 4000;
+  const FLASH_LOOK_MS = 2000;
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /* One word at a time, big enough for the back row, for the class to say back.
+   *
+   * A card starts on one side and turns to show the other. Starting in Spanish
+   * is hear-it-and-say-it: the word is said as the card lands, and the turn
+   * shows what it means. Starting in English is the harder direction and the
+   * one that makes a word stick — the class has to produce the Spanish before
+   * the card turns and says it. Either way the turned card is the same, the
+   * Spanish large and the English under it, so the answer always looks alike.
+   *
+   * Automático runs the deck by itself, which frees the teacher to walk the
+   * room. Anything the teacher presses by hand stops it: once they are driving,
+   * a card turning or moving on underneath them is a fight over the remote.
+   *
+   * The voice that speaks on its own — as a Spanish card lands, as an English
+   * one turns — can be switched off, for a teacher who would rather say the
+   * words themselves or have the class read them cold. 🔊 Otra vez still says
+   * the word on demand either way; only the unasked-for voice goes quiet.
+   */
+  function flashDeck(items, { audible, say, onVoice }) {
+    const inOrder = items.map((_, i) => i);
+    let order = inOrder;
+    let at = 0;
+    let front = 'es';
+    let revealed = false;
+    let auto = false;
+    let voiced = readVoiced();
+    // Bumped by every move. A step of the automatic run waiting on a timer or
+    // the voice checks it on waking, and stops if the deck has moved on.
+    let turn = 0;
+
+    const node = el('div', 'flash');
+    const count = el('div', 'flash-count');
+    const main = el('span', 'flash-main');
+    const sub = el('span', 'flash-sub');
+    const card = el('button', 'flash-card', null, [main, sub]);
+    card.onclick = () => {
+      stopAuto();
+      if (revealed) {
+        // Turned back, not just left: "hide it and say it once more without
+        // the help" is half of what a flashcard is for.
+        revealed = false;
+        paint();
+      } else {
+        reveal();
+      }
+    };
+
+    const prev = el('button', null, '← Anterior');
+    prev.onclick = () => { stopAuto(); go(at - 1); };
+    const again = el('button', null, '🔊 Otra vez');
+    again.hidden = !audible;
+    again.onclick = () => say(order[at]);
+    const next = el('button', 'primary', 'Siguiente →');
+    next.onclick = () => { stopAuto(); go(at + 1 < order.length ? at + 1 : 0); };
+
+    const fronts = [['es', 'Español'], ['en', 'Inglés']].map(([key, label]) => {
+      const btn = el('button', 'choice small' + (front === key ? ' chosen' : ''), label);
+      btn.onclick = () => {
+        front = key;
+        fronts.forEach(b => b.classList.toggle('chosen', b === btn));
+        go(at);
+      };
+      return btn;
+    });
+
+    // Back to card one either way: a reshuffle part-way through would leave
+    // the counter pointing into a deck the class has never seen in that order.
+    const mix = el('button', 'choice small', '🔀 Mezclar');
+    mix.onclick = () => {
+      const on = order === inOrder;
+      order = on ? shuffled(inOrder) : inOrder;
+      mix.classList.toggle('chosen', on);
+      go(0);
+    };
+
+    // Only where there is a voice to silence. Switching it off also cuts a word
+    // already being said, so the button answers at once.
+    const voiceBtn = el('button', 'choice small');
+    voiceBtn.hidden = !audible;
+    voiceBtn.onclick = () => {
+      voiced = !voiced;
+      writeVoiced(voiced);
+      if (!voiced && hasSpeech()) window.speechSynthesis.cancel();
+      paintVoice();
+    };
+
+    function paintVoice() {
+      voiceBtn.textContent = voiced ? '🗣️ Con voz' : '🔇 Sin voz';
+      voiceBtn.classList.toggle('chosen', voiced);
+      if (onVoice) onVoice(audible && voiced);
+    }
+
+    // Offered with or without a voice: without one the run simply leaves the
+    // saying to the class, which still keeps the teacher's hands free.
+    const autoBtn = el('button', 'choice small', '▶ Automático');
+    autoBtn.onclick = () => {
+      if (auto) return stopAuto();
+      setAuto(true);
+      // From the top again if the last card is already done with.
+      go(at === order.length - 1 && revealed ? 0 : at);
+    };
+
+    node.append(
+      count,
+      card,
+      el('div', 'award-row', null, [prev, again, next]),
+      el('div', 'flash-options', null, [el('span', 'rate-label', 'Empieza en'), ...fronts, mix, voiceBtn, autoBtn]),
+      el('p', 'hint', '← → para pasar · espacio para dar la vuelta')
+    );
+
+    function paint() {
+      const item = items[order[at]];
+      const spanishUp = front === 'es' || revealed;
+      count.textContent = `${at + 1} / ${order.length}`;
+      main.textContent = spanishUp ? displayFace(item) : (item.en || '');
+      main.classList.toggle('en', !spanishUp);
+      // A turned card shows the English under the Spanish whichever side it
+      // started on: having just said the Spanish, seeing both together is what
+      // joins the two up.
+      if (revealed) sub.textContent = item.en || '';
+      else sub.textContent = front === 'es' ? 'Toca la tarjeta para ver el inglés' : '¿Cómo se dice en español?';
+      sub.classList.toggle('ask', !revealed);
+      // Hearing the word IS the answer when the card starts in English.
+      again.disabled = front === 'en' && !revealed;
+      prev.disabled = at === 0;
+      next.textContent = at + 1 < order.length ? 'Siguiente →' : '↺ Desde el principio';
+    }
+
+    function reveal() {
+      revealed = true;
+      paint();
+      replay(card, 'turned');
+      return front === 'en' && audible && voiced ? say(order[at]) : Promise.resolve();
+    }
+
+    function go(i) {
+      at = Math.max(0, Math.min(i, order.length - 1));
+      revealed = false;
+      paint();
+      replay(card, 'arrive');
+      const t = ++turn;
+      const spoken = front === 'es' && audible && voiced ? say(order[at]) : Promise.resolve();
+      if (auto) run(t, spoken);
+    }
+
+    async function run(t, spoken) {
+      const live = () => auto && t === turn && node.isConnected;
+      if (front === 'es') {
+        await spoken;
+        await wait(FLASH_REPEAT_MS);
+        if (!live()) return;
+        reveal();
+        await wait(FLASH_LOOK_MS);
+      } else {
+        await wait(FLASH_THINK_MS);
+        if (!live()) return;
+        await reveal();
+        if (!live()) return;
+        await wait(FLASH_REPEAT_MS);
+      }
+      if (!live()) return;
+      if (at + 1 >= order.length) return setAuto(false);
+      go(at + 1);
+    }
+
+    function setAuto(on) {
+      auto = on;
+      autoBtn.textContent = on ? '⏸ Pausa' : '▶ Automático';
+      autoBtn.classList.toggle('chosen', on);
+    }
+
+    function stopAuto() {
+      if (!auto) return;
+      setAuto(false);
+      turn++;
+    }
+
+    // Arrows and the space bar, from a teacher at a laptop across the room.
+    // Swallowed on the way up as well as down: a button still holding focus
+    // from a click would otherwise take the space bar as a second press.
+    function key(e) {
+      const target = { ArrowRight: next, ArrowLeft: prev, ' ': card }[e.key];
+      if (!target) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.type === 'keydown' && !e.repeat && !target.disabled) target.click();
+    }
+
+    return {
+      node,
+      key,
+      show() {
+        paintVoice();
+        go(at);
+      },
+      stop() {
+        setAuto(false);
+        turn++;
+        if (hasSpeech()) window.speechSynthesis.cancel();
+      },
+    };
+  }
+
+  // Kept across lessons and packs, like the sound-effects mute (fx.js): a
+  // teacher who says the words themselves will do so every period, and should
+  // not have to find the button again each time.
+  const FLASH_VOICE_KEY = 'scp-flash-voice-off';
+
+  function readVoiced() {
+    try { return localStorage.getItem(FLASH_VOICE_KEY) !== '1'; } catch { return true; }
+  }
+
+  function writeVoiced(on) {
+    try {
+      if (on) localStorage.removeItem(FLASH_VOICE_KEY);
+      else localStorage.setItem(FLASH_VOICE_KEY, '1');
+    } catch {}
+  }
+
+  function shuffled(list) {
+    const out = list.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  // Remove and re-add, so the animation plays again on an element that
+  // already has the class. Both card animations go first: whichever was left
+  // on would outrank the other in the stylesheet and stop it playing.
+  function replay(node, className) {
+    node.classList.remove('arrive', 'turned');
+    void node.offsetWidth;
+    node.classList.add(className);
+  }
+
+  /* The way into the list before a game, on each game's setup screen.
+   *
+   * Never `primary`. The builder's screenshot pass (roomCapture.js) starts a
+   * game by pressing the setup screen's one primary button; with a second one
+   * here it could open the word list instead, and every screenshot after that
+   * would be of the wrong screen.
+   */
+  function reviewButton(container, items) {
+    const btn = el('button', null, '📖 Repasar el vocabulario');
+    // Hidden rather than greyed: an older room published without its word list
+    // would otherwise open every lesson on a button that does nothing.
+    btn.hidden = !items || !items.length;
+    btn.onclick = () => openVocab(container, items, { moment: 'review' });
+    return btn;
+  }
+
+  /* How the game is played, for both games.
+   *
+   * Two readers at once. A teacher opening a pack for the first time needs the
+   * rules in English; the class it is projected to can take the same rules in
+   * Spanish, which is a little more of the lesson. So every step is a Spanish
+   * line with its English under it. The English starts out showing — a rule
+   * nobody understood is not a rule — and one tap hides it for a teacher who
+   * wants to go through the rules in Spanish.
+   *
+   * `steps` is a function, called each time the panel opens, so the rules
+   * describe THIS room right now: whether it has a Daily Double, the winning
+   * pattern just picked. Where they describe the site they must match what the
+   * code does; the rest is how the room runs around it (pencils down before
+   * anyone reads out), which the site cannot enforce but must never contradict.
+   * The same rules are written twice more in the builder (tptwsbuilder): the
+   * printed How to Play page (src/templates/jeopardyComoJugar.html and
+   * bingoComoJugar.html) and GAME_LISTING_FACTS in src/ai/prompts.js, which
+   * tells buyers. A rule changed in a game has to be changed in all three.
+   *
+   * Numbered, because the list runs down one column and then the next, and
+   * without numbers a reader goes across the rows instead.
+   */
+  function openHowTo(container, steps) {
+    const screen = el('section', 'clue-screen howto-screen');
+    let showing = true;
+
+    const head = el('div', 'clue-head');
+    head.append(el('div', 'where', 'Cómo se juega'), el('div', 'note howto-en', 'How to play'));
+
+    const list = el('ol', 'howto-steps');
+    steps().forEach(step => {
+      list.append(el('li', 'howto-step', null, [
+        el('span', 'howto-icon', step.icon),
+        el('div', 'howto-text', null, [el('p', 'howto-es', step.es), el('p', 'howto-en', step.en)]),
+      ]));
+    });
+    const body = el('div', 'clue-body howto-body', null, [list]);
+
+    const english = el('button', 'small', 'Ocultar el inglés');
+    english.onclick = () => {
+      showing = !showing;
+      screen.querySelectorAll('.howto-en').forEach(e => { e.hidden = !showing; });
+      english.textContent = showing ? 'Ocultar el inglés' : 'Ver en inglés';
+    };
+
+    const close = el('button', 'primary', 'Cerrar');
+    close.onclick = () => {
+      document.removeEventListener('keydown', onKey, true);
+      screen.remove();
+    };
+
+    // Captured, like the word list's, so Escape closes this panel and not the
+    // screen under it. A panel wiped by a redraw of the screen beneath lets go
+    // of the key rather than swallowing the next Escape.
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      if (!screen.isConnected) return document.removeEventListener('keydown', onKey, true);
+      e.stopImmediatePropagation();
+      close.click();
+    }
+    document.addEventListener('keydown', onKey, true);
+
+    screen.append(head, body, el('div', 'clue-controls', null, [el('div', 'award-row', null, [english, close])]));
+    container.append(screen);
+    close.focus();
+  }
+
+  /* The way into the rules. Labelled on each setup screen, where a teacher new
+   * to the game looks first; a bare ❓ in the top bar during play, where the
+   * corner is already full. Never `primary`, for the reason reviewButton gives.
+   */
+  function howToButton(container, steps, opts = {}) {
+    const btn = opts.compact
+      ? el('button', 'ghost small howto-btn', '❓')
+      : el('button', null, '❓ Cómo se juega');
+    if (opts.compact) {
+      btn.title = 'Cómo se juega · How to play';
+      btn.setAttribute('aria-label', 'Cómo se juega');
+    }
+    btn.onclick = () => openHowTo(container, steps);
+    return btn;
+  }
+
   window.RoomUI = {
     el, fitText, topBar,
     hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, speakable, englishToggle,
+    displayFace, openVocab, reviewButton, openHowTo, howToButton,
     DEFAULT_RATE,
   };
 })();

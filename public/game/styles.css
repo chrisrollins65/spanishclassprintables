@@ -554,7 +554,10 @@ button.big { font-size: clamp(1rem, 2vw, 1.6rem); padding: 0.6em 1.6em; }
    three rows, leaving most of the screen empty and the type too small to read
    from the back of a room. A wide minimum forces fewer, fuller columns, and the
    cap stops five words stretching across the whole wall. */
-.vocab-body { justify-content: center; }
+/* `safe center` and a scroll for the list that still doesn't fit: with the
+   English showing, thirty words on a 720px projector can run past the bottom,
+   and a clipped last row is a word the class never reviews. */
+.vocab-body { justify-content: safe center; overflow-y: auto; }
 .vocab-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(14rem, 45vw), 1fr));
@@ -566,9 +569,126 @@ button.big { font-size: clamp(1rem, 2vw, 1.6rem); padding: 0.6em 1.6em; }
   display: flex; flex-direction: column; align-items: center; text-align: center;
   border-bottom: 1px solid var(--edge); padding-bottom: 0.3em;
 }
+/* A word that says itself when tapped (ui.js openVocab). It must still look like
+   a list entry, not a grid of thirty buttons — the list is what the class reads. */
+button.vocab-item {
+  font-weight: inherit;
+  background: transparent;
+  border: none; border-bottom: 1px solid var(--edge);
+  border-radius: 6px 6px 0 0;
+  padding: 0.2em 0.3em 0.3em;
+}
+button.vocab-item:hover { background: var(--cell); }
+/* Said once already: the teacher going round the list can see where they got to. */
+button.vocab-item.heard { border-bottom: 2px solid var(--accent); }
+button.vocab-item.heard .vocab-es { color: var(--gold); }
 .vocab-es { font-size: clamp(1rem, 3.2vh, 2.4rem); font-weight: 700; }
 /* Muted and italic: support, not a second answer to read. */
 .vocab-en { font-size: clamp(0.75rem, 2.1vh, 1.5rem); color: var(--muted); font-style: italic; }
+
+/* ---------- How to play (ui.js openHowTo) ---------- */
+
+/* Two wide columns, filled down and then across, so eight steps with their
+   English fit a 720px projector without scrolling and still read in order.
+   Wide, because it is height that runs out: every extra wrapped line is a
+   line of height. A narrow window drops to one column, and the body scrolls
+   rather than clip the last rule. */
+.howto-body { justify-content: safe center; overflow-y: auto; }
+.howto-steps {
+  list-style: none;
+  counter-reset: howto;
+  margin: 0 auto;
+  padding: 0;
+  width: min(100%, 90rem);
+  columns: 2 24rem;
+  column-gap: clamp(1.5rem, 4vw, 4rem);
+  text-align: left;
+}
+.howto-step {
+  counter-increment: howto;
+  display: flex;
+  gap: 0.6em;
+  align-items: flex-start;
+  break-inside: avoid;
+  padding: clamp(0.3rem, 1.2vh, 0.9rem) 0;
+  border-bottom: 1px solid var(--edge);
+}
+/* Drawn by CSS rather than the list's own marker, which can't be given a
+   badge, and which a flex row would lose anyway. Same size as the Spanish. */
+.howto-step::before {
+  content: counter(howto);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 50%;
+  background: var(--accent);
+  font-size: clamp(0.95rem, 2.8vh, 2rem);
+  font-weight: 800;
+  line-height: 1;
+}
+/* Sized to the largest that still fits the longest list (eight steps, the
+   quiz) on a 1024x768 projector — still common in classrooms, and the
+   tightest of them, since its 4:3 wraps the most lines. */
+.howto-icon { flex: none; width: 1.4em; text-align: center; font-size: clamp(1.2rem, 3.7vh, 2.6rem); line-height: 1.1; }
+.howto-text p { margin: 0; }
+.howto-es { font-size: clamp(0.95rem, 2.8vh, 2rem); font-weight: 700; line-height: 1.25; }
+/* The same support styling as the word list's English. */
+.howto-text .howto-en { margin-top: 0.15em; font-size: clamp(0.72rem, 1.95vh, 1.35rem); color: var(--muted); font-style: italic; line-height: 1.3; }
+
+/* ---------- Flashcards (ui.js flashDeck) ---------- */
+
+.flash {
+  display: flex; flex-direction: column; align-items: center;
+  gap: clamp(0.5rem, 2vh, 1.4rem);
+  width: min(100%, 60rem);
+}
+.flash-count { color: var(--muted); font-size: clamp(0.8rem, 2vh, 1.2rem); letter-spacing: 0.1em; }
+/* The card is the one thing on screen: tall, and the word as big as a
+   projector allows. Sized by height, since that is what runs out first on a
+   720px screen with the buttons underneath. */
+button.flash-card {
+  width: 100%;
+  min-height: clamp(9rem, 42vh, 26rem);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.4em;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 22px;
+  padding: 1rem 2rem;
+  font-weight: inherit;
+}
+button.flash-card:hover { background: var(--panel); border-color: var(--accent); }
+.flash-main {
+  font-size: clamp(2.2rem, 12vh, 8rem); font-weight: 800; line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+/* A card showing its English side reads as the question, not as the word. */
+.flash-main.en { font-style: italic; font-weight: 700; color: var(--gold); }
+.flash-sub { font-size: clamp(1rem, 4.4vh, 2.8rem); color: var(--muted); font-style: italic; }
+.flash-sub.ask { font-size: clamp(0.8rem, 2.2vh, 1.3rem); font-style: normal; letter-spacing: 0.06em; }
+.flash-options {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: clamp(0.3rem, 1.1vh, 0.6rem);
+}
+.flash-options .rate-label { margin-right: 0.2rem; }
+/* ← on the first card, 🔊 before an English card has turned: plainly off, or
+   the teacher presses it twice and wonders what broke. */
+.flash button:disabled { opacity: 0.4; cursor: default; }
+.flash button:disabled:hover { background: var(--cell); }
+
+.flash-card.arrive { animation: card-arrive 0.3s ease-out; }
+.flash-card.turned { animation: card-turn 0.35s ease-out; }
+@keyframes card-arrive {
+  from { opacity: 0; transform: translateX(2.5rem); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes card-turn {
+  0%   { transform: perspective(60rem) rotateX(0); }
+  50%  { transform: perspective(60rem) rotateX(80deg); }
+  100% { transform: perspective(60rem) rotateX(0); }
+}
 
 /* ---------- Fun: sound, mascots and motion (fx.js) ----------
 
@@ -577,7 +697,8 @@ button.big { font-size: clamp(1rem, 2vw, 1.6rem); padding: 0.6em 1.6em; }
    screenshot capture relies on: it asks for reduced motion, so a TpT thumbnail
    is never a frame caught halfway through a zoom. */
 
-.fx-mute { font-size: 1.05rem; line-height: 1; padding: 0.35em 0.55em; }
+/* The ❓ beside it (ui.js howToButton) is the same size, so the two read as a pair. */
+.fx-mute, .howto-btn { font-size: 1.05rem; line-height: 1; padding: 0.35em 0.55em; }
 
 .fx-confetti {
   position: fixed; inset: 0; width: 100%; height: 100%;
@@ -942,7 +1063,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   .podium-screen.reveal .podium-rest,
   .timer.urgent .timer-num, .timer.done,
   .call-view.fresh .bingo-ball, .call-view.fresh > :not(.bingo-ball),
-  .verdict.win { animation: none; }
+  .verdict.win, .flash-card.arrive, .flash-card.turned { animation: none; }
   .timer-ring .bar { transition: none; }
   .clue-cell:not([disabled]):hover { transform: none; }
 }
