@@ -21,6 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
          */
         $middleware->validateCsrfTokens(except: [
             'api/internal/room',
+            // Called by the local builder with a shared secret, not a browser
+            // session, so there is no CSRF token to send.
+            'api/internal/pin-asset',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

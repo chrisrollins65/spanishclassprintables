@@ -17,6 +17,12 @@
   'use strict';
 
   const { el, englishToggle, canSpeakSpanish, speakable } = window.RoomUI;
+  const fx = window.RoomFX;
+
+  // The drawn ball's colour steps through these, the way a real bingo drum's
+  // balls are coloured by range: consecutive calls never look alike, so the
+  // screen visibly changes even when two clues read much the same.
+  const BALL_COLORS = ['#B4744A', '#5F8FB4', '#6FA96F', '#C4954A', '#9B6FA9', '#B45F6F', '#3FA7A2'];
 
   /* What a clue can be.
    *
@@ -247,6 +253,7 @@
     start.onclick = () => {
       state = { mode, pattern, rate: DEFAULT_RATE, mix: [...mix], calls: [], order: shuffledOrder() };
       save();
+      fx.play('start');
       renderCaller();
     };
 
@@ -308,7 +315,10 @@
 
   /* ---------- caller ---------- */
 
-  function renderCaller() {
+  // `fresh` only for a word that was drawn just now. Every other redraw — a
+  // clue-type switch, coming back from a panel — shows the same call again, and
+  // rolling the ball in a second time would read as a new word.
+  function renderCaller(fresh = false) {
     root.innerHTML = '';
     const screen = el('section', 'board-screen');
 
@@ -319,12 +329,12 @@
     );
 
     const controls = el('div', 'award-row');
-    controls.append(calledButton(), checkButton(), resetButton());
+    controls.append(fx.muteButton(), calledButton(), checkButton(), resetButton());
 
     screen.append(window.RoomUI.topBar(progress, title(), controls));
 
     const stage = el('div', 'call-stage');
-    stage.append(callView());
+    stage.append(callView(fresh === true));
     screen.append(stage);
 
     screen.append(callerControls());
@@ -335,7 +345,7 @@
     return state.calls.length ? state.calls[state.calls.length - 1] : null;
   }
 
-  function callView() {
+  function callView(fresh) {
     const call = currentCall();
     const view = el('div', 'call-view');
 
@@ -347,9 +357,20 @@
     const item = game.items[call.i];
     const mode = modeFor(call.mode);
 
+    /* The ball carries the call's number, not its word: the number is already
+     * on the counter up top, so it gives nothing away. A fresh one rolls in
+     * while the drum rattles, and the clue rises only once it has landed. */
+    const n = state.calls.length;
+    const ball = el('div', 'bingo-ball', null, [el('span', null, String(n))]);
+    ball.style.setProperty('--ball', BALL_COLORS[(n - 1) % BALL_COLORS.length]);
+    view.append(ball);
+    if (fresh) view.classList.add('fresh');
+    const drawn = fresh ? fx.play('draw') : Promise.resolve();
+
     if (call.mode === 'audio') {
       const written = writtenClue(item);
       const spoken = spokenClue(item);
+      view.classList.add('listening');
       view.append(el('div', 'call-audio', '🔊'), el('p', 'call-note', 'Escucha con atención'));
 
       const shown = el('p', 'call-text audio-text');
@@ -376,7 +397,9 @@
       if (spokenEnglish && item[spokenEnglish]) {
         view.append(englishToggle(item[spokenEnglish]));
       }
-      speakAt(spoken);
+      // After the rattle, never over it (see fx.js) — and not at all if the
+      // teacher has already drawn past this word while it played.
+      drawn.then(() => { if (view.isConnected) speakAt(spoken); });
       return view;
     }
 
@@ -491,7 +514,7 @@
     if (next == null) return;
     state.calls.push({ i: next, mode: pickMode() });
     save();
-    renderCaller();
+    renderCaller(true);
   }
 
   function pickMode() {
@@ -610,6 +633,12 @@
 
     const box = el('div', win ? 'verdict win' : 'verdict lose');
     box.textContent = win ? '¡BINGO VÁLIDO!' : 'TODAVÍA NO';
+    if (win) {
+      fx.play('fanfare');
+      fx.confetti();
+    } else {
+      fx.play('notYet');
+    }
     return box;
   }
 

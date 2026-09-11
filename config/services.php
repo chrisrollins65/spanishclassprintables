@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    // The TpT builder (a separate local app) pushes finished Pinterest pin
+    // images to /api/internal/pin-asset so Pinterest's bulk uploader has a
+    // public URL to fetch them from. Its own secret, not the room one: the key
+    // lives in another codebase and should open only this door. Uploads are
+    // swept after 'retention_days', which must comfortably outlast the gap
+    // between pushing an image and importing the CSV that references it.
+    // Same keys as Eat Well Planner's, where these pins were hosted first.
+    'pin_assets' => [
+        'secret' => env('PIN_ASSET_SECRET'),
+        'retention_days' => env('PIN_ASSET_RETENTION_DAYS', 14),
+    ],
+
 ];

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\InternalPinAssetController;
 use App\Http\Controllers\RoomController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,3 +32,9 @@ Route::get('/j/{code}', [RoomController::class, 'show'])
     ->where('code', '[A-Za-z0-9]{4,8}');
 
 Route::post('/api/internal/room', [RoomController::class, 'publish']);
+
+// Pin image drop-box: the TpT builder pushes rendered pin PNGs here so
+// Pinterest's bulk uploader has a public URL to fetch them from. Guarded by its
+// own shared secret (see InternalPinAssetController).
+Route::post('/api/internal/pin-asset', [InternalPinAssetController::class, 'apiPostPinAsset'])
+    ->middleware('throttle:60,1');
