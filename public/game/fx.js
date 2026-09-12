@@ -265,7 +265,7 @@
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
 
-  const CONFETTI_COLORS = ['#B4744A', '#E8B461', '#5F8FB4', '#6FA96F', '#9B6FA9', '#FDF8F1'];
+  const CONFETTI_COLORS = ['#E71F69', '#BE0087', '#00A89F', '#F8B31A', '#8C6FD9', '#FDF8F1'];
 
   /* Confetti: from both bottom corners, or — given `at` — a burst fountaining
    * up from one point on screen, for a celebration that belongs to one thing

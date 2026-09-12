@@ -1,21 +1,41 @@
 /* Projector-first. Every size here is picked to be legible from the back row of
    a classroom, not from a laptop on a desk — hence clamp() everywhere and a
    dark ground, because a projected white page washes out a room. The palette is
-   the worksheets' own (src/brand.js) inverted: same terracotta accent, warm
-   dark ground instead of warm paper, so the board reads as the same product. */
+   the logo's own (src/brand.js) inverted: same magenta, teal and gold, dark
+   ground instead of cream paper, so the board reads as the same product.
+
+   The ground is a near-neutral plum rather than a plain black: the logo's
+   magenta goes muddy on a warm brown ground and harsh on a pure black one. */
 
 :root {
-  --ground: #191512;
-  --panel: #241d19;
-  --cell: #2f2621;
-  --cell-hover: #3d312a;
-  --spent: #1f1a17;
+  --ground: #17121B;
+  --panel: #221A28;
+  --cell: #2E2436;
+  --cell-hover: #3D3047;
+  --spent: #1C1620;
   --ink: #FDF8F1;
-  --accent: #B4744A;
-  --gold: #E8B461;
-  --muted: #9a8b7e;
-  --edge: #4a3c33;
-  --ok: #6FA96F;
+  --accent: #E71F69;
+  --accent-hover: #F3467F;
+  --accent-deep: #BE0087;
+  --teal: #00A89F;
+  --gold: #F8B31A;
+  --muted: #A798AE;
+  --edge: #46394F;
+  --on-bright: #1C1420;
+
+  /* Semantic, and deliberately NOT brand colours: these three have to mean the
+     same thing at a glance from the back of a room, so they are picked to stay
+     apart from the accent and from each other. --ok leans green rather than
+     teal, and --bad leans orange rather than pink, because the brand supplies a
+     teal and a pink that would otherwise be mistaken for them. */
+  --ok: #5FBE6B;
+  --bad: #FF7A5E;
+  --hot: #FF9E4D;
+
+  /* Podium metal. Gold doubles as the brand's gold; the other two are the
+     medals themselves, which no amount of rebranding should recolour. */
+  --silver: #B9C2CC;
+  --bronze: #C0794A;
 }
 
 * { box-sizing: border-box; }
@@ -69,7 +89,7 @@ body {
 }
 
 .muted { color: var(--muted); font-size: clamp(0.72rem, 1.8vh, 1rem); }
-.error { color: #E08A7A; }
+.error { color: var(--bad); }
 
 h1 { font-size: clamp(1.3rem, 4.4vh, 3rem); margin: 0; }
 h2 { font-size: clamp(0.95rem, 2.5vh, 2rem); margin: 0; }
@@ -88,9 +108,18 @@ button {
 button:hover { background: var(--cell-hover); }
 button:active { transform: translateY(1px); }
 button.primary { background: var(--accent); border-color: var(--accent); }
-button.primary:hover { background: #c8845a; }
+button.primary:hover { background: var(--accent-hover); }
 button.ghost { background: transparent; }
 button.small { font-size: 0.85rem; padding: 0.45em 0.9em; }
+
+/* A disabled control has to LOOK spent, not merely refuse the click — a primary
+   button keeps the accent as its background whatever its state, and in a colour
+   this bright that reads as the next thing to press. The spent board squares
+   are excluded: they do their own fading, and dimming them twice washes the
+   board out. */
+button:disabled:not(.clue-cell) { opacity: 0.4; cursor: default; }
+button:disabled:not(.clue-cell):hover { background: var(--cell); }
+button.primary:disabled:hover { background: var(--accent); }
 
 input[type="text"], input[type="number"] {
   font: inherit;
@@ -101,6 +130,69 @@ input[type="text"], input[type="number"] {
   padding: 0.6em 0.9em;
 }
 input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- Brand ---------- */
+
+/* Sized in vh for the same reason everything else on these screens is: the
+   setup screens shrink to fit rather than scroll, and a logo fixed in px is the
+   one thing that would refuse to give ground when the window is short. */
+.brand-mark { display: block; width: auto; flex: none; }
+.brand-full { height: clamp(2.6rem, 11vh, 6.5rem); max-width: min(90%, 34rem); }
+.brand-compact { height: clamp(1.5rem, 5.4vh, 3rem); max-width: min(74%, 20rem); opacity: 0.92; }
+
+/* Aimed at the teacher, over the heads of the class, so it is deliberately the
+   quietest thing on the screen until it is hovered. */
+.more-games {
+  color: var(--muted);
+  font-size: clamp(0.7rem, 1.7vh, 0.95rem);
+  text-decoration: none;
+  border-bottom: 1px solid var(--edge);
+  padding-bottom: 1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.more-games:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Under the standings rather than among them, with enough air that nobody
+   reaches for it while looking for their own name. */
+.podium-more { margin-top: clamp(0.5rem, 2vh, 1.4rem); text-align: center; flex: none; }
+.caller-more { margin-top: 0.4rem; text-align: center; }
+
+/* The two asks, stacked and centred. The gap is small on purpose: they are one
+   block addressed to one person, not two competing offers. */
+.after-game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.3rem, 1.1vh, 0.7rem);
+}
+
+/* Louder than the store link below it, and the only thing on this screen that
+   is — it is the ask that expires with the lesson. Still nowhere near the
+   standings: a card, not a button, because a button on the podium is something
+   a child walks up and presses. */
+.review-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: min(92%, 34rem);
+  padding: clamp(0.4rem, 1.4vh, 0.7rem) clamp(0.7rem, 2vw, 1.2rem);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--ink);
+  transition: border-color 0.12s, background 0.12s;
+}
+.review-cta:hover { border-color: var(--accent); background: var(--cell); }
+.review-ask { font-weight: 700; font-size: clamp(0.78rem, 1.9vh, 1.05rem); }
+/* The half that is a fact rather than a request, so it reads as the small print
+   it is — and wraps to two lines on a phone without shoving the podium up. */
+.review-why {
+  color: var(--muted);
+  font-size: clamp(0.66rem, 1.55vh, 0.88rem);
+  text-align: center;
+  text-wrap: balance;
+}
 
 /* ---------- Setup ---------- */
 
@@ -230,14 +322,19 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- Clue overlay ---------- */
 
+/* One padding value, named, because the Daily Double has to add the banner's
+   height to the same number — and because the corner clock is inset by it. It
+   answers to the height as well as the width: 48px of margin top and bottom is
+   nothing on a 1080p screen and a tenth of a 720p one. */
 .clue-screen {
+  --pad: clamp(0.6rem, min(3vw, 2.6vh), 3rem);
   position: fixed;
   inset: 0;
   overflow: hidden;
   background: var(--ground);
   display: flex;
   flex-direction: column;
-  padding: clamp(1rem, 3vw, 3rem);
+  padding: var(--pad);
   gap: 1.5rem;
   z-index: 10;
 }
@@ -268,46 +365,133 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   letter-spacing: 0.1em;
 }
 
+/* `safe center` for the same reason the setup screens use it: a plain centred
+   column spills its overflow out of BOTH ends, and here the bottom end is
+   where the answer and the award live. */
 .clue-body {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: clamp(1rem, 3vw, 2.5rem);
+  justify-content: safe center;
+  overflow-y: auto;
+  /* Height as well as width: on a 1280x720 projector the width-only gap was
+     spending 40px between every element of a screen that had no 40px to
+     spare, which is what pushed the tail of the clue out of view. */
+  gap: clamp(0.6rem, min(3vw, 3.5vh), 2.5rem);
   text-align: center;
 }
+/* Same reasoning, and the one element big enough to crowd out everything under
+   it. Scoped to the clue: bingo's calling screen is the glyph and little else,
+   so there it can have the room. */
+.clue-body .call-audio { font-size: clamp(2.5rem, min(14vw, 17vh), 12rem); }
+/* Reading, not listening: the text is on screen, so the two things that stood
+   in for it go. They come back if it is hidden again. */
+.clue-body.reading .call-audio,
+.clue-body.reading .call-note { display: none; }
+.clue-body .audio-text { font-size: clamp(1.2rem, min(3vw, 5vh), 2.6rem); }
+.clue-body .call-en { font-size: clamp(1rem, min(2.6vw, 4vh), 2.2rem); }
 /* Capped by line length, not by the window: a sentence spanning the full width
    of a projector screen is read by turning your head. Two short lines beat one
    very long one at the back of a classroom. */
+/* The height cap does nothing at 1080p, where the 5rem ceiling is already the
+   binding one. It bites below about an 800px-tall window — a 720p projector, a
+   laptop with a browser chrome on it — which is exactly where four lines of
+   clue at 80px had no room to be four lines. */
 .prompt {
-  font-size: clamp(1.8rem, 6vw, 5rem);
+  font-size: clamp(1.4rem, min(6vw, 10vh), 5rem);
   font-weight: 700;
   line-height: 1.25;
   margin: 0;
   max-width: 26ch;
 }
+/* The answer owns a row of the clue screen, rather than being the last line
+   inside the clue body — a long clue, a big 🔊, the English and the timer
+   would push it down past the body's edge and the "+$400" popping up
+   underneath was then written straight over it.
+
+   Its own row cannot be written over: the row is `flex: none` against a
+   `flex: 1` clue body, so it takes the height it needs and the body gives way,
+   however little is left. It takes that height only when it arrives, rather
+   than standing empty through the clue — holding the space open would have
+   spent it on nothing all game to save a shift that happens anyway, since
+   .answered restyles the clue in the same moment. */
 .answer {
-  font-size: clamp(1.5rem, 4.5vw, 3.5rem);
+  flex: none;
+  align-self: center;
+  max-width: 100%;
+  font-size: clamp(1.5rem, min(4.5vw, 7.5vh), 3.5rem);
   font-weight: 800;
   color: var(--ok);
   margin: 0;
+  padding: 0.12em 0.55em;
+  border: 3px solid var(--ok);
+  border-radius: 0.35em;
+  background: var(--panel);
 }
-.answer.hidden { visibility: hidden; }
+.answer.hidden { display: none; }
+.answer:not(.hidden) { animation: pop-in 0.4s cubic-bezier(.2, 1.5, .4, 1) both; }
 
+/* The corner clock.
+ *
+ * Out of the column entirely, pinned to the screen's top right: a countdown
+ * that a long clue can push off the bottom of the screen is worse than no
+ * countdown, since the room stops believing in it. The corner is empty on
+ * every clue — the heading above is centred — and on a Daily Double the
+ * screen's own top padding has already stepped down past the banner. */
 .timer {
-  font-size: clamp(2rem, 6vw, 4.5rem);
+  position: absolute;
+  top: var(--pad);
+  right: var(--pad);
+  font-size: clamp(1.6rem, min(6vw, 8vh), 4.5rem);
   font-weight: 800;
   color: var(--gold);
   font-variant-numeric: tabular-nums;
 }
-.timer.done { color: #E08A7A; }
+.clue-screen.daily .timer { top: calc(var(--pad) + clamp(1.7rem, 4.2vw, 3.4rem)); }
+.timer.done { color: var(--bad); }
 
-.clue-controls { display: flex; flex-direction: column; gap: 0.8rem; align-items: center; flex: none; }
+/* `flex: none`: the teacher's row is the one thing that may never be squeezed
+   out, so it takes its height first and the clue above gives way. Which makes
+   its own gaps worth measuring in vh — they are spent before the clue's. */
+.clue-controls { display: flex; flex-direction: column; gap: clamp(0.35rem, 1.2vh, 0.8rem); align-items: center; flex: none; }
 .award-row { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
 .award-row button { display: flex; align-items: center; gap: 0.5rem; }
+
+/* The two writing times, tied together by a tighter gap than the row they sit
+   in, so they read as one control with two settings rather than as two more
+   buttons competing with Ver vocabulario beside them. */
+.timer-choice { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; justify-content: center; }
+.timer-choice .rate-label { margin-right: 0.15rem; }
+
+/* The length that suits this clue, outlined rather than filled: it is a
+   suggestion the teacher may ignore, and filling it would make it the loudest
+   thing on a row that already has an answer button on it. */
+button.suggested { border-color: var(--accent); }
 .hint { color: var(--muted); font-size: clamp(0.7rem, 1.7vh, 0.95rem); }
+
+/* Answered: the clue has done its job, so it stands down and hands the screen
+   to the answer. Nothing here is hidden that is still being read — the loud
+   parts are the ones that were competing with the answer for the same room. */
+/* Height-capped like everything else here, and for one extra reason: this rule
+   also lands on a listening clue's text, which is shown at a size of its own
+   while the class reads it. Without the cap, answering GREW that text — the
+   stood-down clue coming out bigger than the clue itself. */
+.clue-screen.answered .prompt { font-size: clamp(1.2rem, min(3.4vw, 4.5vh), 2.6rem); color: var(--muted); }
+.clue-screen.answered .call-en { font-size: clamp(0.9rem, min(2.2vw, 3vh), 1.8rem); }
+.clue-screen.answered .call-note,
+.clue-screen.answered .clue-head .note { display: none; }
+/* Answering a listening clue shows its text, so the glyph is normally already
+   gone by now — this is for the teacher who hides the text again afterwards,
+   and brings a 12rem speaker back onto a screen that now has an answer on it
+   too. */
+.clue-screen.answered .call-audio { font-size: clamp(1.4rem, min(4vw, 6vh), 3rem); }
+/* Tighter than the clue it replaces: answering a listening clue puts its text
+   on screen, so the body is holding more lines than it was a moment ago and
+   the old spacing tipped it into a scrollbar. */
+.clue-screen.answered .clue-body { gap: clamp(0.4rem, min(2vw, 2vh), 1.2rem); }
+.clue-screen.answered .answer { font-size: clamp(1.8rem, min(5.5vw, 7.5vh), 4.5rem); }
 
 /* ---------- Shared top bar ---------- */
 
@@ -338,7 +522,7 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .turn-pill .name, .score span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------- Bingo: setup choices ---------- */
+/* ---------- Choice buttons (bingo setup, and both games' speed row) ---------- */
 
 .choice-list { display: flex; flex-wrap: wrap; gap: clamp(0.3rem, 1.1vh, 0.6rem); justify-content: center; }
 .choice { border-color: var(--edge); }
@@ -403,7 +587,7 @@ button.big { font-size: clamp(1rem, 2vw, 1.6rem); padding: 0.6em 1.6em; }
   letter-spacing: 0.04em;
 }
 .verdict.win { color: var(--ok); }
-.verdict.lose { color: #E08A7A; }
+.verdict.lose { color: var(--bad); }
 
 .clue-body.check {
   justify-content: flex-start;
@@ -474,7 +658,7 @@ button.big { font-size: clamp(1rem, 2vw, 1.6rem); padding: 0.6em 1.6em; }
 }
 .mini-cell.on { background: var(--gold); }
 
-/* ---------- Bingo: in-game controls ---------- */
+/* ---------- In-game controls (the speed row is shared with the quiz) ---------- */
 
 .rate-row, .mode-switch {
   display: flex;
@@ -542,7 +726,7 @@ button.big { font-size: clamp(1rem, 2vw, 1.6rem); padding: 0.6em 1.6em; }
 /* The one square worth double. Loud on purpose — it is the surprise. */
 .daily-banner {
   position: absolute; top: 0; left: 0; right: 0;
-  background: var(--gold); color: #1b1714; text-align: center;
+  background: var(--gold); color: var(--on-bright); text-align: center;
   font-weight: 800; letter-spacing: 0.18em;
   font-size: clamp(0.9rem, 2.2vw, 1.8rem); padding: 0.35em;
 }
@@ -747,7 +931,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
    as the reminder, so the heading moves down clear of it — it used to sit
    jammed against the banner's bottom edge. The height is the banner's own,
    its font size times line height plus padding. */
-.clue-screen.daily { padding-top: calc(clamp(1rem, 3vw, 3rem) + clamp(1.7rem, 4.2vw, 3.4rem)); }
+.clue-screen.daily { padding-top: calc(var(--pad) + clamp(1.7rem, 4.2vw, 3.4rem)); }
 .clue-screen.daily .where .value { display: inline-block; }
 .clue-screen.dd-revealed .where .value { animation: throb 1s 0.35s ease-in-out 3; }
 
@@ -759,18 +943,18 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: clamp(0.5rem, 2.4vh, 1.6rem);
   padding: 1rem; text-align: center; overflow: hidden;
-  background: radial-gradient(circle at 50% 45%, #4a3020 0%, #191512 72%);
+  background: radial-gradient(circle at 50% 45%, #43113C 0%, var(--ground) 72%);
   animation: dd-in 0.45s cubic-bezier(.2, 1.3, .4, 1) both, shake 0.45s 1.3s ease-in-out;
 }
 .dd-splash.leaving { animation: dd-out 0.3s ease-in forwards; }
-/* The game-show sunburst: alternating gold and terracotta rays, turning. */
+/* The game-show sunburst: alternating gold and magenta rays, turning. */
 .dd-burst {
   position: absolute; left: 50%; top: 45%;
   width: 250vmax; height: 250vmax; margin: -125vmax 0 0 -125vmax;
   z-index: -1;
   background: repeating-conic-gradient(
-    rgba(232, 180, 97, 0.2) 0deg 9deg, transparent 9deg 18deg,
-    rgba(180, 116, 74, 0.24) 18deg 27deg, transparent 27deg 36deg);
+    rgba(248, 179, 26, 0.2) 0deg 9deg, transparent 9deg 18deg,
+    rgba(190, 0, 135, 0.30) 18deg 27deg, transparent 27deg 36deg);
   animation: dd-spin 30s linear infinite;
 }
 .dd-title {
@@ -778,7 +962,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   font-size: clamp(2.4rem, min(11vw, 17vh), 9rem);
   font-weight: 900; letter-spacing: 0.02em; line-height: 1;
   color: var(--gold);
-  text-shadow: 0 0.06em 0 #7a4a24, 0 0 0.5em rgba(232, 180, 97, 0.45);
+  text-shadow: 0 0.06em 0 #7A5400, 0 0 0.5em rgba(248, 179, 26, 0.45);
   animation: dd-title-in 0.6s cubic-bezier(.2, 1.4, .4, 1) backwards;
 }
 .dd-line {
@@ -793,7 +977,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
 }
 .dd-base { animation: pop-in 0.4s 0.8s cubic-bezier(.2, 1.5, .4, 1) backwards; }
 .dd-times {
-  color: #F08C6C; display: inline-block;
+  color: var(--hot); display: inline-block;
   animation: dd-stamp 0.35s 1.3s cubic-bezier(.2, 1.6, .4, 1) backwards;
 }
 .dd-eq { color: var(--muted); animation: rise-in 0.3s 1.75s ease-out backwards; }
@@ -871,7 +1055,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   to   { opacity: 1; transform: none; }
 }
 .score .streak {
-  font-weight: 800; color: #F08C6C;
+  font-weight: 800; color: var(--hot);
   animation: flicker 1.4s ease-in-out infinite;
 }
 @keyframes flicker {
@@ -902,7 +1086,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
 .moment-line { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; justify-content: center; }
 .moment-head { color: var(--gold); font-weight: 900; }
 .moment-name { font-weight: 800; }
-.moment-note { color: #F08C6C; font-weight: 800; }
+.moment-note { color: var(--hot); font-weight: 800; }
 @keyframes fade-out { to { opacity: 0; } }
 
 /* The podium (jeopardy.js podium). Tapping anywhere on it throws the
@@ -944,14 +1128,16 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   display: flex; align-items: flex-start; justify-content: center;
   padding-top: 0.2em;
   border-radius: 12px 12px 0 0;
-  font-weight: 900; color: #1b1714;
+  font-weight: 900; color: var(--on-bright);
   font-size: clamp(1.6rem, min(5vw, 8vh), 4.4rem);
   box-shadow: inset 0 -0.3em 0 rgba(0, 0, 0, 0.18);
 }
-/* Gold, silver, bronze — bronze being the store's own terracotta. */
+/* Gold, silver, bronze. The accent used to stand in for bronze, back when it
+   was the store's terracotta; it is the logo's magenta now, so the bronze is
+   its own colour rather than a third place that isn't a metal. */
 .place-1 .podium-step { height: 38%; background: var(--gold); }
-.place-2 .podium-step { height: 26%; background: #B9C2CC; }
-.place-3 .podium-step { height: 17%; background: var(--accent); }
+.place-2 .podium-step { height: 26%; background: var(--silver); }
+.place-3 .podium-step { height: 17%; background: var(--bronze); }
 @keyframes winner-bounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-12%); }
@@ -992,7 +1178,6 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
    height as well as the width, because on a 720p projector the clue screen
    has no height to spare for a large ring under a long prompt. */
 .timer.running {
-  position: relative;
   width: clamp(4.5rem, min(11vw, 17vh), 9rem);
   aspect-ratio: 1;
   display: grid; place-items: center;
@@ -1005,8 +1190,8 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   transition: stroke-dashoffset 1s linear, stroke 0.3s;
 }
 .timer-num { font-size: 0.55em; position: relative; }
-.timer.urgent .bar { stroke: #E08A7A; }
-.timer.urgent .timer-num { color: #E08A7A; animation: throb 1s ease-in-out infinite; }
+.timer.urgent .bar { stroke: var(--bad); }
+.timer.urgent .timer-num { color: var(--bad); animation: throb 1s ease-in-out infinite; }
 .timer.done { animation: pop-in 0.4s cubic-bezier(.2, 1.5, .4, 1); }
 
 /* Bingo: the drawn ball. A real ball's look — colour all round, a white disc
@@ -1027,7 +1212,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
 }
 .bingo-ball span {
   width: 58%; aspect-ratio: 1; border-radius: 50%;
-  background: #FDF8F1; color: #1b1714;
+  background: var(--ink); color: var(--on-bright);
   display: grid; place-items: center;
   font-weight: 800; font-size: clamp(1rem, 3.4vh, 2.2rem);
   font-variant-numeric: tabular-nums;
@@ -1063,7 +1248,8 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   .podium-screen.reveal .podium-rest,
   .timer.urgent .timer-num, .timer.done,
   .call-view.fresh .bingo-ball, .call-view.fresh > :not(.bingo-ball),
-  .verdict.win, .flash-card.arrive, .flash-card.turned { animation: none; }
+  .verdict.win, .flash-card.arrive, .flash-card.turned,
+  .answer:not(.hidden) { animation: none; }
   .timer-ring .bar { transition: none; }
   .clue-cell:not([disabled]):hover { transform: none; }
 }

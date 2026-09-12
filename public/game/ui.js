@@ -65,6 +65,59 @@
    */
   const DEFAULT_RATE = 0.75;
 
+  /* The speeds a clue can be read at, slowest first — the direction of bingo's
+   * clue dial, so the two rows on that screen do not run opposite ways.
+   *
+   * There is no faster-than-normal option because there is no teacher who needs
+   * a listening clue sped up. The slow end stops at half speed on purpose:
+   * browser speech stretches the phonemes instead of adding pauses between
+   * words, so below about 0.5 it slurs into a drone that is harder to follow
+   * than normal speed — slower stops helping well before it stops being possible.
+   */
+  const RATES = [
+    { key: 'slowest', label: 'Muy lento', value: 0.5 },
+    { key: 'slow', label: 'Lento', value: 0.75 },
+    { key: 'normal', label: 'Normal', value: 1 },
+  ];
+
+  function nearlyRate(a, b) {
+    return Math.abs((a == null ? DEFAULT_RATE : a) - b) < 0.01;
+  }
+
+  // A saved game carries whatever speed the list offered when it was saved, so
+  // a room resumed after the list changes snaps to the nearest one still on it
+  // rather than leaving every button unlit.
+  function normalizeRate(value) {
+    if (value == null) return DEFAULT_RATE;
+    return RATES.reduce(
+      (best, r) => (Math.abs(r.value - value) < Math.abs(best - value) ? r.value : best),
+      RATES[0].value
+    );
+  }
+
+  /* Restyled in place rather than re-rendered.
+   *
+   * A full redraw here would replay the clue the moment the speed changed and
+   * quietly re-hide any text the teacher had just revealed. Neither is what
+   * "make it slower" asks for: the new speed belongs to the next Repetir, which
+   * the teacher presses when they are ready.
+   */
+  function rateRow(current, onPick) {
+    const row = el('div', 'rate-row');
+    row.append(el('span', 'rate-label', 'Velocidad'));
+    const buttons = RATES.map(r => {
+      const btn = el('button', 'choice small' + (nearlyRate(current, r.value) ? ' chosen' : ''), r.label);
+      btn.onclick = () => {
+        onPick(r.value);
+        buttons.forEach(b => b.classList.remove('chosen'));
+        btn.classList.add('chosen');
+      };
+      row.append(btn);
+      return btn;
+    });
+    return row;
+  }
+
   function hasSpeech() {
     return typeof window.speechSynthesis !== 'undefined';
   }
@@ -630,10 +683,100 @@
     return btn;
   }
 
+  /* Where "more games" sends the teacher. One constant, because the same link
+   * goes on four screens and a store that moves should move in one edit.
+   *
+   * The store rather than this site's own front page: the games are bought on
+   * TpT, and sending a teacher who is mid-lesson to a homepage that then has to
+   * hand them on again loses most of them. Not the same address as the QR code
+   * printed on the worksheets, which points at the site on purpose. */
+  const MORE_GAMES_URL = 'https://www.teacherspayteachers.com/store/spanish-class-printables';
+
+  /* The logo, as the heading of a screen rather than decoration on it.
+   *
+   * `full` is for the screens that are only a logo and a prompt — the code entry
+   * — where it stands in for the h1 outright. Everywhere else it is `compact`:
+   * the setup screens are already measured in vh and shrink to fit (see
+   * .centered in styles.css), so a banner across the top is bought straight out
+   * of the controls below it.
+   *
+   * Decorative wherever a real heading follows it, so a screen reader is not made
+   * to read the store's name before the topic the class is here for.
+   */
+  function brandMark(size = 'compact') {
+    const img = el('img', 'brand-mark brand-' + size);
+    img.src = '/game/logo.png';
+    if (size === 'full') {
+      img.alt = 'Spanish Class Printables';
+    } else {
+      img.alt = '';
+      img.setAttribute('aria-hidden', 'true');
+    }
+    return img;
+  }
+
+  /* The way back to the store, for the teacher who has just watched the game
+   * land. Only ever on the screens either side of a game — never during one,
+   * where the one thing on screen has to be the class's, not the store's.
+   *
+   * English, like the printed How to Play page: the class plays in Spanish, but
+   * this line is aimed over their heads at the person who does the buying.
+   */
+  function moreGames(label = 'Get more games and printables') {
+    const link = el('a', 'more-games', label);
+    link.href = MORE_GAMES_URL;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    return link;
+  }
+
+  /* Where a buyer leaves feedback: every purchase on one page, each with its own
+   * Provide Feedback button, and the sign-in sends them straight back to it.
+   *
+   * Deliberately not a product page. The room has no idea which listing it was
+   * sold as — the pack can be bought on its own or inside a bundle, and the
+   * builder only learns the product URL after the upload, long after the room
+   * was published — so a guessed link would send half of them somewhere they
+   * cannot review from.
+   */
+  const REVIEW_URL = 'https://www.teacherspayteachers.com/My-Purchases';
+
+  /* What the screen says once the game is over.
+   *
+   * The review ask leads because it is the one that expires: the teacher is
+   * standing in front of a game that has just worked, with the class still in
+   * the room. By tonight they are marking and the ask is worth nothing. The
+   * store link stays under it, quieter, for the same teacher on the way out.
+   *
+   * Never on the demo room: nobody playing the demo has bought anything, and
+   * asking them to review a purchase they never made reads as a scam. They get
+   * the store link on its own, which is what the demo is for anyway.
+   */
+  function afterGame(room) {
+    const wrap = el('div', 'after-game');
+    if (!(room && room.demo)) {
+      const ask = el('a', 'review-cta');
+      ask.href = REVIEW_URL;
+      ask.target = '_blank';
+      ask.rel = 'noopener';
+      ask.append(
+        el('span', 'review-ask', '⭐ Did this work for your class?'),
+        // Both halves of the ask, because only one of them is about us: TpT
+        // really does pay credits for feedback, and a teacher who does not know
+        // that is being asked for a favour rather than offered a trade.
+        el('span', 'review-why', 'Leave a review on TpT — it helps us, and you earn credits toward your next purchase.')
+      );
+      wrap.append(ask);
+    }
+    wrap.append(moreGames());
+    return wrap;
+  }
+
   window.RoomUI = {
     el, fitText, topBar,
     hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, speakable, englishToggle,
     displayFace, openVocab, reviewButton, openHowTo, howToButton,
-    DEFAULT_RATE,
+    brandMark, moreGames, afterGame, MORE_GAMES_URL,
+    DEFAULT_RATE, RATES, normalizeRate, rateRow,
   };
 })();

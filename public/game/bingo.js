@@ -16,13 +16,14 @@
 (function () {
   'use strict';
 
-  const { el, englishToggle, canSpeakSpanish, speakable, displayFace, openVocab, reviewButton, howToButton } = window.RoomUI;
+  const { el, englishToggle, canSpeakSpanish, speakable, displayFace, openVocab, reviewButton, howToButton,
+    brandMark, moreGames, afterGame, DEFAULT_RATE, normalizeRate, rateRow } = window.RoomUI;
   const fx = window.RoomFX;
 
   // The drawn ball's colour steps through these, the way a real bingo drum's
   // balls are coloured by range: consecutive calls never look alike, so the
   // screen visibly changes even when two clues read much the same.
-  const BALL_COLORS = ['#B4744A', '#5F8FB4', '#6FA96F', '#C4954A', '#9B6FA9', '#B45F6F', '#3FA7A2'];
+  const BALL_COLORS = ['#E71F69', '#00A89F', '#F8B31A', '#5B8DD9', '#BE0087', '#63BE5A', '#8C6FD9'];
 
   /* What a clue can be.
    *
@@ -73,21 +74,6 @@
     key: 'mixed', rank: 9, short: 'Mezcla', label: 'Mezcla',
     hint: 'Cambia de tipo de pista en cada llamada.',
   };
-
-  /* Slowest first, matching the direction of the clue dial below.
-   *
-   * There is no faster-than-normal option because there is no teacher who needs
-   * a listening clue sped up. The slow end stops at half speed on purpose:
-   * browser speech stretches the phonemes instead of adding pauses between
-   * words, so below about 0.5 it slurs into a drone that is harder to follow
-   * than normal speed — slower stops helping well before it stops being possible.
-   */
-  const RATES = [
-    { key: 'slowest', label: 'Muy lento', value: 0.5 },
-    { key: 'slow', label: 'Lento', value: 0.75 },
-    { key: 'normal', label: 'Normal', value: 1 },
-  ];
-  const DEFAULT_RATE = 0.75;
 
   let root, room, game, state;
   // Set once the teacher touches the setup form, so the late-arriving voice
@@ -181,7 +167,7 @@
     setupTouched = false;
     root.innerHTML = '';
     const wrap = el('section', 'centered setup');
-    wrap.append(el('h1', null, title()), el('p', 'muted', '¿Cómo quieres cantar las palabras?'));
+    wrap.append(brandMark(), el('h1', null, title()), el('p', 'muted', '¿Cómo quieres cantar las palabras?'));
 
     let mode = 'en';
     let pattern = 'line';
@@ -252,7 +238,7 @@
       el('div', 'award-row', null, [
         // Reads `pattern` when it opens, so the rule shown is the one just picked.
         howToButton(root, () => howToSteps(pattern)), reviewButton(root, game.items), start,
-      ]));
+      ]), moreGames());
     root.append(wrap);
   }
 
@@ -425,7 +411,8 @@
       };
 
       const controls = [again, showText];
-      view.append(shown, el('div', 'award-row', null, controls), rateRow());
+      view.append(shown, el('div', 'award-row', null, controls),
+        rateRow(state.rate, r => { state.rate = r; save(); }));
       const spokenEnglish = CLUE_ENGLISH[audioSourceId()];
       if (spokenEnglish && item[spokenEnglish]) {
         view.append(englishToggle(item[spokenEnglish]));
@@ -447,42 +434,6 @@
       view.append(englishToggle(item[englishField]));
     }
     return view;
-  }
-
-  /* Restyled in place rather than re-rendered.
-   *
-   * A full redraw here would replay the clue the moment the speed changed and
-   * quietly re-hide any text the teacher had just revealed. Neither is what
-   * "make it slower" asks for: the new speed belongs to the next Repetir, which
-   * the teacher presses when they are ready.
-   */
-  function rateRow() {
-    const row = el('div', 'rate-row');
-    row.append(el('span', 'rate-label', 'Velocidad'));
-    const buttons = RATES.map(r => {
-      const btn = el('button', 'choice small' + (nearly(state.rate, r.value) ? ' chosen' : ''), r.label);
-      btn.onclick = () => {
-        state.rate = r.value;
-        save();
-        buttons.forEach(b => b.classList.remove('chosen'));
-        btn.classList.add('chosen');
-      };
-      row.append(btn);
-      return btn;
-    });
-    return row;
-  }
-
-  function nearly(a, b) {
-    return Math.abs((a == null ? DEFAULT_RATE : a) - b) < 0.01;
-  }
-
-  function normalizeRate(value) {
-    if (value == null) return DEFAULT_RATE;
-    return RATES.reduce(
-      (best, r) => (Math.abs(r.value - value) < Math.abs(best - value) ? r.value : best),
-      RATES[0].value
-    );
   }
 
   function callerControls() {
@@ -517,7 +468,11 @@
     bar.append(row);
     if (call) bar.append(modeSwitch());
     if (state.calls.length >= game.items.length) {
-      bar.append(el('p', 'hint', 'Se acabaron las palabras.'));
+      // The deck running dry is the whole of bingo's "after" — there is no
+      // podium here — so it is the one place in the caller that may ask the
+      // teacher for anything. Nothing is drawn beside it while words remain.
+      bar.append(el('p', 'hint', 'Se acabaron las palabras.'),
+        el('div', 'caller-more', null, [afterGame(room)]));
     }
     return bar;
   }
@@ -737,7 +692,7 @@
   }
 
   function speakAt(text) {
-    window.RoomUI.speak(text, state && state.rate != null ? state.rate : window.RoomUI.DEFAULT_RATE);
+    window.RoomUI.speak(text, state && state.rate != null ? state.rate : DEFAULT_RATE);
   }
 
   /* ---------- reset ---------- */
