@@ -1,12 +1,20 @@
 <?php
 
 use App\Http\Controllers\Api\InternalPinAssetController;
+use App\Http\Controllers\ContactController;
 use App\Http\Controllers\RoomController;
+use App\Models\ContactMessage;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+/*
+ * The homepage is where a buyer lands from the address printed on a packet:
+ * thanks and a review ask first, then the room code box, then contact.
+ */
+Route::get('/', fn () => view('home', ['topics' => ContactMessage::TOPICS]));
+
+// A teacher has no reason to send more than a couple; this only stops floods.
+Route::post('/contact', [ContactController::class, 'store'])
+    ->middleware('throttle:5,10');
 
 /*
  * Classroom game rooms.

@@ -145,33 +145,150 @@
     window.speechSynthesis.addEventListener('voiceschanged', () => onReady && onReady(), { once: true });
   }
 
-  /* A clue with a gap read aloud.
+  /* A clue with a gap read aloud, where there is no beep to mark the gap with.
    *
    * Speech engines either skip a run of underscores or read it as the word
    * "underscore", both of which wreck the sentence. A comma is the one thing
-   * every engine turns into a pause, which is what a gap should sound like.
+   * every engine turns into a pause. It is the fallback, not the answer — see
+   * speak(), which sounds the blank instead wherever the browser will let it.
    */
   function speakable(text) {
     return String(text || '').replace(/_{2,}/g, ',');
   }
 
-  /* Resolves when the voice has finished — or been cut off by the next speak(),
+  /* The pieces a sentence with blanks is read in.
+   *
+   * Every piece with a blank after it is given a comma it did not have. The
+   * engine is about to reach the end of an utterance, and it lands the end of
+   * an utterance the way it lands the end of a sentence — the falling, finished
+   * tone that makes a class hear two sentences with a beep between them instead
+   * of one sentence with a hole in it. A comma is the one mark every engine
+   * reads as "still going". It costs about 40ms.
+   */
+  function gapPieces(text) {
+    const parts = String(text).split(/_{2,}/);
+    return parts.map((part, i) => {
+      const said = part.replace(/\s+$/, '');
+      if (i === parts.length - 1 || !said || /[,;:.!?…—-]$/.test(said)) return said;
+      return said + ',';
+    });
+  }
+
+  /* Bumped by every speak(). A sentence read in pieces has to be able to stop
+   * between them: when the next clue starts — or the teacher presses Repetir —
+   * the half this run had left to say must not arrive over the top of it.
+   */
+  let speechRun = 0;
+
+  // The beep sounding right now, if any. A blank belongs to the sentence it is
+  // in, so the next one silences it wherever it had got to.
+  let ringing = null;
+
+  function hushGap() {
+    if (ringing) ringing.stop();
+    ringing = null;
+  }
+
+  function utterance(text, rate) {
+    const utter = new SpeechSynthesisUtterance(text);
+    const voice = spanishVoice();
+    if (voice) utter.voice = voice;
+    utter.lang = voice ? voice.lang : 'es-ES';
+    utter.rate = rate == null ? DEFAULT_RATE : rate;
+    return utter;
+  }
+
+  /* One unbroken stretch of speech.
+   *
+   * Resolves when the voice has finished — or been cut off by the next speak(),
    * which is also an end. The ceiling is for Chrome, where some voices never
    * fire `end` at all: anything waiting on the word (the flashcards' automatic
    * run) would otherwise wait forever.
    */
-  function speak(text, rate) {
+  function sayPart(text, rate, run) {
     return new Promise(resolve => {
-      if (!hasSpeech() || !text) return resolve();
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(speakable(text));
-      const voice = spanishVoice();
-      if (voice) utter.voice = voice;
-      utter.lang = voice ? voice.lang : 'es-ES';
-      utter.rate = rate == null ? DEFAULT_RATE : rate;
-      const ceiling = setTimeout(resolve, 1500 + String(text).length * 150);
+      if (!/\S/.test(text) || run !== speechRun) return resolve();
+      const utter = utterance(text, rate);
+      const ceiling = setTimeout(resolve, 1500 + text.length * 150);
       utter.onend = utter.onerror = () => { clearTimeout(ceiling); resolve(); };
       window.speechSynthesis.speak(utter);
+    });
+  }
+
+  /* Say it, sounding any blank rather than pausing at it.
+   *
+   * The sentence has to be broken in two to get a sound into the middle of it:
+   * an engine will not say where in an utterance it has got to (Chrome fires no
+   * boundary events at all for the network voices this runs on), so the only
+   * way to place anything at the blank is to stop speaking there. Everything
+   * below is about making that break sound like a bleeped-out word rather than
+   * a full stop — the comma in gapPieces for the tone of it, and the beep
+   * filling the silence for the length of it.
+   *
+   * Resolves when the last piece has finished, so the callers that wait on a
+   * word (the flashcards, the bingo caller) wait for the whole sentence.
+   */
+  function speak(text, rate) {
+    if (!hasSpeech() || !text) return Promise.resolve();
+    window.speechSynthesis.cancel();
+    hushGap();
+    const run = ++speechRun;
+    const fx = window.RoomFX;
+    const pieces = gapPieces(text);
+    // No blank, or no way to sound one: one utterance, blanks flattened to a comma.
+    if (pieces.length < 2 || !fx || !fx.gapTone) return sayPart(speakable(text), rate, run);
+
+    /* The sentence as a run of steps: a piece to say, and null for each blank
+     * between two of them. An empty piece — a blank at the very start or end of
+     * the sentence — drops out, and with it any second beep in a row, so two
+     * can never land back to back. */
+    const steps = [];
+    pieces.forEach((piece, i) => {
+      if (i && steps[steps.length - 1] !== null) steps.push(null);
+      if (/\S/.test(piece)) steps.push(piece);
+    });
+    const last = steps.length - 1;
+
+    return new Promise(resolve => {
+      const ring = at => {
+        if (run !== speechRun) return;
+        hushGap();
+        ringing = fx.gapTone();
+        if (at !== last) return;
+        // A blank that ends the sentence has no voice coming back to stop it,
+        // so it rings itself out and that is the end of the clue.
+        if (ringing) ringing.done.then(resolve);
+        else resolve();
+      };
+
+      /* Every piece is queued now rather than asked for when the one before it
+       * ends. An engine leaves silence between two utterances whatever we do —
+       * about a quarter of a second for the voice this is written for — and
+       * waiting on `end` to queue the next one adds a round trip through the
+       * browser to it. That silence is the full stop: the less of it there is,
+       * and the more of it the beep fills, the more the two halves stay one
+       * sentence. */
+      steps.forEach((step, k) => {
+        if (step === null) {
+          if (!k) ring(0);
+          return;
+        }
+        const utter = utterance(step, rate);
+        // The voice is back, so the blank is over. Stopping the beep here and
+        // not on a timer is what makes it exactly as long as the silence it has
+        // to cover: any longer and it plays over the first word of the rest of
+        // the sentence, which is the word the class can least afford to lose.
+        utter.onstart = hushGap;
+        utter.onend = utter.onerror = () => {
+          if (k === last) return resolve();
+          if (steps[k + 1] === null) ring(k + 1);
+        };
+        window.speechSynthesis.speak(utter);
+      });
+
+      // The ceiling, as in sayPart: a voice that never fires `end` must not
+      // leave a caller waiting on the sentence forever.
+      setTimeout(resolve, 2000 + String(text).length * 200);
     });
   }
 
@@ -774,7 +891,7 @@
 
   window.RoomUI = {
     el, fitText, topBar,
-    hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, speakable, englishToggle,
+    hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, englishToggle,
     displayFace, openVocab, reviewButton, openHowTo, howToButton,
     brandMark, moreGames, afterGame, MORE_GAMES_URL,
     DEFAULT_RATE, RATES, normalizeRate, rateRow,

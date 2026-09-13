@@ -19,6 +19,7 @@
 
   let ctx = null;
   let master = null;
+  let content = null;
   let muted = readMuted();
 
   // Global rather than per room: a teacher who wants silence wants it in every
@@ -48,6 +49,12 @@
       master = ctx.createGain();
       master.gain.value = muted ? 0 : VOLUME;
       master.connect(ctx.destination);
+      /* Sound that is part of a clue rather than decoration hangs off this one
+       * instead, so the mute above never reaches it, and it sits louder: it has
+       * to carry to the back of the room the way the voice does (see gapTone). */
+      content = ctx.createGain();
+      content.gain.value = 0.5;
+      content.connect(ctx.destination);
     }
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
@@ -57,7 +64,7 @@
   /* ---------- building blocks ---------- */
 
   function tone(freq, at, dur, opts = {}) {
-    const { type = 'sine', gain = 0.3, slideTo = null, attack = 0.01 } = opts;
+    const { type = 'sine', gain = 0.3, slideTo = null, attack = 0.01, out = null } = opts;
     const t0 = ctx.currentTime + at;
     const osc = ctx.createOscillator();
     const env = ctx.createGain();
@@ -67,7 +74,7 @@
     env.gain.setValueAtTime(0.0001, t0);
     env.gain.exponentialRampToValueAtTime(gain, t0 + attack);
     env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(env).connect(master);
+    osc.connect(env).connect(out || master);
     osc.start(t0);
     osc.stop(t0 + dur + 0.05);
   }
@@ -239,6 +246,78 @@
     return new Promise(resolve => setTimeout(resolve, seconds * 1000));
   }
 
+  /* The blank in a gap sentence, heard.
+   *
+   * A speech engine can only be made to pause at a run of underscores, and a
+   * sentence read slowly to children learning Spanish is already full of
+   * pauses: "el perro ___ en el jardín" and "el perro, en el jardín" sound the
+   * same to the one child who has to work out which word is missing. A tone
+   * cannot be mistaken for a breath — it is the only sound in the sentence that
+   * is not a voice — and it lands exactly where the blank is.
+   *
+   * Not an effect, so the mute leaves it alone: this one IS the clue.
+   *
+   * The beep everybody already knows: one steady 1kHz sine, the pitch a
+   * listening test or a bleeped-out word uses. Held flat rather than struck and
+   * decayed like the sounds above, because a note that fades away sounds like
+   * something ending, and this one stands for something missing.
+   *
+   * It rings until it is stopped rather than for a set length. The sentence is
+   * read in pieces and the silence an engine leaves between two of them is not
+   * ours to predict — a quarter of a second for the voice this is written for,
+   * more on a slow one. A beep that fills exactly that silence is a word bleeped
+   * out of a sentence; one that ends early leaves a hole in the middle of it.
+   *
+   * @returns {{done: Promise<void>, stop: function()}|null} null when the
+   *   browser has given us no audio to play it through, so the caller can fall
+   *   back to a pause. `done` resolves when it has rung itself out; `stop` ends
+   *   it early, for the moment the voice comes back.
+   */
+  const GAP_HZ = 1000;
+  const GAP_GAIN = 0.35;
+  // Long enough to cover the silence a slow engine leaves; never heard in full
+  // unless the blank ends the sentence and no voice comes back to stop it.
+  const GAP_MAX = 0.5;
+
+  function gapTone() {
+    if (!audio()) return null;
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(GAP_HZ, t0);
+    // Edges, not a shape: up fast, hold, off fast. The short ramps are only
+    // there because a square-edged start and stop on a sine clicks.
+    env.gain.setValueAtTime(0.0001, t0);
+    env.gain.exponentialRampToValueAtTime(GAP_GAIN, t0 + 0.012);
+    env.gain.setValueAtTime(GAP_GAIN, t0 + GAP_MAX - 0.02);
+    env.gain.exponentialRampToValueAtTime(0.0001, t0 + GAP_MAX);
+    osc.connect(env).connect(content);
+    osc.start(t0);
+    osc.stop(t0 + GAP_MAX + 0.05);
+
+    let over = null;
+    const done = new Promise(resolve => { over = resolve; });
+    const rungOut = setTimeout(() => over(), GAP_MAX * 1000);
+    let stopped = false;
+    return {
+      done,
+      stop() {
+        if (stopped) return;
+        stopped = true;
+        clearTimeout(rungOut);
+        const now = ctx.currentTime;
+        // Faded rather than cut: a sine switched off mid-cycle clicks, and a
+        // click is the one sound here that would read as a fault.
+        env.gain.cancelScheduledValues(now);
+        env.gain.setValueAtTime(Math.max(env.gain.value, 0.0001), now);
+        env.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+        osc.stop(now + 0.06);
+        over();
+      },
+    };
+  }
+
   /* The bell rather than a speaker: 🔊 already means "listening clue" on both
    * games' screens, and a second speaker in the corner would read as a way to
    * hear the clue again. */
@@ -373,5 +452,5 @@
     requestAnimationFrame(frame);
   }
 
-  window.RoomFX = { play, muteButton, confetti, growFrom, countUp, reducedMotion };
+  window.RoomFX = { play, gapTone, muteButton, confetti, growFrom, countUp, reducedMotion };
 })();

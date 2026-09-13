@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  const { el, englishToggle, canSpeakSpanish, speakable, displayFace, openVocab, reviewButton, howToButton,
+  const { el, englishToggle, canSpeakSpanish, displayFace, openVocab, reviewButton, howToButton,
     brandMark, moreGames, afterGame, DEFAULT_RATE, normalizeRate, rateRow } = window.RoomUI;
   const fx = window.RoomFX;
 
@@ -388,18 +388,17 @@
 
     if (call.mode === 'audio') {
       const written = writtenClue(item);
-      const spoken = spokenClue(item);
       view.classList.add('listening');
       view.append(el('div', 'call-audio', '🔊'), el('p', 'call-note', 'Escucha con atención'));
 
       const shown = el('p', 'call-text audio-text');
       shown.hidden = true;
-      // The blank stays a blank on screen; only the speech engine gets the
-      // comma, and showing it that way would look like a typo.
+      // The underscores go to the voice as well as to the screen: RoomUI.speak
+      // is what turns a blank into the tone the class hears (see ui.js).
       shown.textContent = written;
 
       const again = el('button', 'small', 'Repetir');
-      again.onclick = () => speakAt(spoken);
+      again.onclick = () => speakAt(written);
 
       // The escape hatch, and a teaching move rather than a giveaway: show the
       // text, play it again while they read along, then hide it and play it
@@ -419,7 +418,7 @@
       }
       // After the rattle, never over it (see fx.js) — and not at all if the
       // teacher has already drawn past this word while it played.
-      drawn.then(() => { if (view.isConnected) speakAt(spoken); });
+      drawn.then(() => { if (view.isConnected) speakAt(written); });
       return view;
     }
 
@@ -685,10 +684,6 @@
   function writtenClue(item) {
     const id = audioSourceId();
     return String((id ? item[id] : displayFace(item)) || '');
-  }
-
-  function spokenClue(item) {
-    return speakable(writtenClue(item));
   }
 
   function speakAt(text) {
