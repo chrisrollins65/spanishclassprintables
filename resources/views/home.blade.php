@@ -51,7 +51,9 @@
   h3 { font-size: 1.3rem; font-weight: 600; }
   p { margin: 0; }
   .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding-inline: 20px; }
-  section { scroll-margin-top: 80px; }
+  /* Every anchor target clears the sticky header, not just sections: the play
+     card is a div inside the hero, and it was landing under the nav. */
+  [id] { scroll-margin-top: 96px; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   /* ---- Buttons ---- */
@@ -71,6 +73,14 @@
   .btn-teal:hover { background: var(--teal-dark); }
   .btn-ghost { background: transparent; color: var(--accent); border-color: var(--edge); }
   .btn-ghost:hover { border-color: var(--accent); }
+  .btn:disabled { cursor: progress; opacity: .8; transform: none; }
+  .spinner {
+    width: 1em; height: 1em; border-radius: 50%;
+    border: 2.5px solid rgba(255, 255, 255, .45); border-top-color: #fff;
+    animation: spin .7s linear infinite;
+  }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ---- Header ---- */
   .top { position: sticky; top: 0; z-index: 10; background: rgba(253, 248, 241, .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--edge); }
@@ -235,7 +245,7 @@
           independent shop that loves Spanish class as much as you do, and we hope it gave you an easy, happy lesson.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#review"><span class="stars" aria-hidden="true">★</span> Loved it? Leave a review</a>
+          <a class="btn btn-primary" href="{{ config('site.review_url') }}" target="_blank" rel="noopener"><span class="stars" aria-hidden="true">★</span> Loved it? Leave a review</a>
           <a class="btn btn-ghost" href="#play">Play your game</a>
         </div>
         <p class="hero-note">A review takes about a minute, helps other teachers find us, <strong>and earns you TpT Credits</strong> toward your next resource.</p>
@@ -365,10 +375,13 @@
           <h3>Want fresh Spanish activities in your inbox?</h3>
           <p>About once a month: new printables, seasonal ideas and the occasional freebie. No spam, unsubscribe anytime.</p>
         </div>
-        {{-- MailerLite's popup form. The href is the fallback for when the
-             MailerLite script is blocked or hasn't loaded. --}}
-        <a class="btn btn-ghost" href="https://spanishclassprintables.subscribepage.io/" target="_blank" rel="noopener"
-           onclick="if (window.ml) { ml('show', @js(config('site.mailerlite_form')), true); return false; }">Join the mailing list</a>
+        {{-- MailerLite's popup form. universal.js finds this button by its
+             ml-onclick-form class and fetches the form named in its onclick,
+             reading it as the second ", "-separated piece — so the onclick's
+             shape is load-bearing. The href is the fallback for when the form
+             never arrived (script blocked, MailerLite down). --}}
+        <a class="btn btn-ghost ml-onclick-form" href="https://spanishclassprintables.subscribepage.io/" target="_blank" rel="noopener"
+           onclick="return openSignupForm(this, '{{ config('site.mailerlite_form') }}', true)">Join the mailing list</a>
       </div>
     </div>
   </section>
@@ -432,7 +445,10 @@
           </div>
 
           <div>
-            <button class="btn btn-primary" type="submit">Send message</button>
+            <button class="btn btn-primary" type="submit">
+              <span class="spinner" hidden aria-hidden="true"></span>
+              <span class="label">Send message</span>
+            </button>
           </div>
         </form>
       @endif
@@ -452,11 +468,60 @@
   </div>
 </footer>
 
-{{-- Loaded last and only for the mailing list popup: nothing else on the page
-     waits on it. --}}
-{{-- No queueing stub on purpose: `ml` only exists once the script has really
-     loaded, which is what lets the button fall back to its link when it hasn't. --}}
-<script async src="https://assets.mailerlite.com/js/universal.js"
-        onload="ml('account', @js(config('site.mailerlite_account')))"></script>
+<script>
+  /* Contact form: one press sends once. The button is disabled in the submit
+     event, after the browser has already collected the form, so disabling it
+     costs nothing. */
+  (function () {
+    var form = document.querySelector('.contact-form');
+    if (!form) return;
+    var button = form.querySelector('button[type=submit]');
+
+    function reset() {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.querySelector('.spinner').hidden = true;
+      button.querySelector('.label').textContent = 'Send message';
+    }
+
+    form.addEventListener('submit', function (e) {
+      if (button.disabled) { e.preventDefault(); return; }
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      button.querySelector('.spinner').hidden = false;
+      button.querySelector('.label').textContent = 'Sending…';
+    });
+
+    // Back/forward cache restores the page exactly as it was left — mid-send,
+    // with a dead button — so put it back.
+    window.addEventListener('pageshow', function (e) { if (e.persisted) reset(); });
+  })();
+
+  /* The mailing list button. Opens MailerLite's popup when the form has been
+     fetched; otherwise returns true so the link opens the signup page instead
+     of the click silently vanishing into MailerLite's queue. */
+  function openSignupForm(link, slug, force) {
+    var ml = window.ml;
+    if (ml && ml.fn && ml.fn.popups && ml.fn.popups[slug]) {
+      ml('show', slug, force);
+      return false;
+    }
+    return true;
+  }
+
+  /* MailerLite's standard loader. The account has to be queued BEFORE
+     universal.js runs: it reads the account once, at load, to fetch the
+     click-to-open forms, and an account set afterwards fetches nothing.
+     Popups are switched off so the account's own triggers (this form is set to
+     appear after 5 seconds) never put the mailing list in front of the review
+     ask — here it opens only when asked. */
+  (function (w, d, e, u, f, l, n) {
+    w[f] = w[f] || function () { (w[f].q = w[f].q || []).push(arguments); };
+    l = d.createElement(e); l.async = 1; l.src = u;
+    n = d.getElementsByTagName(e)[0]; n.parentNode.insertBefore(l, n);
+  })(window, document, 'script', 'https://assets.mailerlite.com/js/universal.js', 'ml');
+  ml('account', @js(config('site.mailerlite_account')));
+  ml('enablePopups', false);
+</script>
 </body>
 </html>

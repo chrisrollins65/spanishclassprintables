@@ -260,16 +260,34 @@
         en: 'One secret square is the Daily Double: it is worth double!',
       },
       // "Nobody loses points" is for the teacher who knows the TV show, where a
-      // wrong answer costs its value; here nothing ever subtracts.
+      // wrong answer costs its value. Nothing subtracts on the board here — the
+      // final wager is the one place anything does, and it says so itself.
       {
         icon: '🔄',
-        es: 'Después de cada pista, le toca al siguiente equipo. Nadie pierde puntos.',
-        en: 'After every clue it is the next team\'s turn, whoever got it right. Nobody ever loses points.',
+        es: finalClue()
+          ? 'Después de cada pista, le toca al siguiente equipo. En el tablero nadie pierde puntos.'
+          : 'Después de cada pista, le toca al siguiente equipo. Nadie pierde puntos.',
+        en: finalClue()
+          ? 'After every clue it is the next team\'s turn, whoever got it right. Nobody loses points on the board.'
+          : 'After every clue it is the next team\'s turn, whoever got it right. Nobody ever loses points.',
+      },
+      /* The whole round in one line, because that is all it needs: the screen
+       * walks the class through it a step at a time when it happens, and this
+       * panel is read before anyone has played. What it has to say here is
+       * that the game does not end when the board does. */
+      finalClue() && {
+        icon: '💸',
+        es: 'Al final, cada equipo apuesta parte de su dinero en una última pista. ¡Si acierta, lo gana; si falla, lo pierde!',
+        en: 'At the end, every team bets some of its money on one last clue. Right: it wins the bet. Wrong: it loses it.',
       },
       {
         icon: '🏆',
-        es: 'Cuando no quedan casillas, gana el equipo con más dinero.',
-        en: 'When the board is empty, the team with the most money wins.',
+        es: finalClue()
+          ? 'Después de la apuesta final, gana el equipo con más dinero.'
+          : 'Cuando no quedan casillas, gana el equipo con más dinero.',
+        en: finalClue()
+          ? 'After the final wager, the team with the most money wins.'
+          : 'When the board is empty, the team with the most money wins.',
       },
     ].filter(Boolean);
   }
@@ -360,11 +378,17 @@
     const screen = el('section', 'board-screen');
 
     const controls = el('div', 'award-row');
-    controls.append(fx.muteButton(), howToButton(root, () => howToSteps(state), { compact: true }), vocabButton(), resetButton());
+    controls.append(fx.muteButton(), howToButton(root, () => howToSteps(state), { compact: true }),
+      scoreButton(), vocabButton(), resetButton());
 
     // A finished game's board is all empty squares, so the standings take its
     // place — and whose turn it is no longer means anything.
     if (state.used.length === countClues()) {
+      /* Except that the game is not over yet when there is a final wager to
+       * play. It takes over the screen entirely: the board it would sit on is
+       * empty, and the standings behind it would be answering the question the
+       * round is about to ask. */
+      if (finalClue() && wagerState().stage !== 'done') return renderWager();
       const reveal = celebrateFinish;
       celebrateFinish = false;
       pendingMoments = [];
@@ -457,6 +481,417 @@
     fx.play(moments.some(m => m.kind === 'leader') ? 'leader' : 'streak');
     setTimeout(() => overlay.classList.add('leaving'), MOMENT_MS);
     setTimeout(() => overlay.remove(), MOMENT_MS + 400);
+  }
+
+  /* ---------- la apuesta final ---------- */
+
+  /* The last clue of the game, which every team bets on.
+   *
+   * The Daily Double deliberately has no wager (see pickDailyCell), for
+   * reasons that all stop applying here. Mid-game a wager is arithmetic the
+   * class has to stop for and an argument the teacher has to settle, and a
+   * team that loses its score with squares still on the board gives up for the
+   * rest of the lesson. This round happens once, after the board is empty:
+   * every team writes its bet at the same time on the sheet it has had all
+   * game, the screen does the sums, and there is nothing left to give up on.
+   *
+   * What it buys is the half of the lesson the old ending threw away. Without
+   * it the game is decided around the fifteenth square and the last ten
+   * minutes are a formality for everyone but the leader; with it the team in
+   * last place goes into the final clue able to win.
+   */
+
+  // The biggest square on the board, and so the smallest bet a team is always
+  // allowed. src/gamePack.js in the builder works the same number out the same
+  // way for the printed directions — a floor the paper promises and the screen
+  // refuses would be worse than no floor at all.
+  function topValue() {
+    return Math.max(0, ...game.categories.flatMap(c => c.clues.map(q => Number(q.value) || 0)));
+  }
+
+  /* What a team may bet: everything it has, or the top square if that is more.
+   *
+   * The floor is the whole point. A team on nothing that can only bet nothing
+   * has been told to watch the last question, and that is exactly the team the
+   * round exists for. It costs the leader nothing — they can always bet more.
+   */
+  function wagerCap(team) {
+    return Math.max(team.score, topValue());
+  }
+
+  // A pack written before the final round existed simply has none, and the
+  // game ends on the board the way it always did.
+  function finalClue() {
+    return game.final && game.final.prompt ? game.final : null;
+  }
+
+  function wagerState() {
+    if (!state.wager) {
+      state.wager = {
+        stage: 'intro',
+        // null, not 0: "nothing entered yet" is what holds the screen on the
+        // betting stage, and a prefilled 0 is a bet nobody chose.
+        bets: state.teams.map(() => null),
+        right: state.teams.map(() => null),
+        before: null,
+      };
+    }
+    return state.wager;
+  }
+
+  /* Past four teams a single column of rows is taller than the screen, and the
+   * teacher ends up scrolling a list mid-game to find the team that just
+   * answered. Two columns halve it; below about 26rem of width each they fold
+   * back to one, which is a phone, where scrolling is the normal way to read.
+   */
+  function rowsClass(base) {
+    return base + (state.teams.length > 4 ? ' two-up' : '');
+  }
+
+  function wagerScreen(stageClass) {
+    root.innerHTML = '';
+    const screen = el('section', 'board-screen wager-screen ' + stageClass);
+    const controls = el('div', 'award-row');
+    controls.append(fx.muteButton(), howToButton(root, () => howToSteps(state), { compact: true }),
+      scoreButton(), vocabButton(), resetButton());
+    screen.append(window.RoomUI.topBar(el('div'), game.title || room.theme, controls));
+    return screen;
+  }
+
+  function renderWager() {
+    stopTimer();
+    const w = wagerState();
+    if (w.stage === 'bets') return renderWagerBets();
+    if (w.stage === 'clue') return renderWagerClue();
+    if (w.stage === 'scored') return renderWagerResult();
+    return renderWagerIntro();
+  }
+
+  /* The category, and nothing else.
+   *
+   * This screen is the whole of the bet: a team decides what to stake knowing
+   * only what the clue is about. So the category gets the screen to itself,
+   * and the clue is not merely hidden here — as far as the room is concerned
+   * it does not exist yet.
+   */
+  /* What a bet is worth, in the two words that decide it.
+   *
+   * The round asks a class of ten-year-olds to stake their game on a sentence,
+   * so the terms have to be ON the screen they are staring at while they
+   * decide — not only in the teacher's line on the clue screen, which arrives
+   * after the bets are locked and is addressed to the wrong person anyway.
+   *
+   * Green and red, ✓ and ✗, because that is exactly what the teacher taps at
+   * the end: a child who read this screen already knows what the two buttons
+   * on the last one mean.
+   */
+  function wagerStakes() {
+    return el('div', 'wager-stakes', null, [
+      el('span', 'stake win', '✓ Si aciertan, ganan su apuesta'),
+      el('span', 'stake lose', '✗ Si fallan, la pierden'),
+    ]);
+  }
+
+  function renderWagerIntro() {
+    const screen = wagerScreen('stage-intro');
+    const stage = el('div', 'wager-stage');
+    stage.append(
+      el('div', 'wager-burst'),
+      el('h2', 'wager-title', '¡LA APUESTA FINAL!'),
+      el('p', 'wager-label', 'La categoría es'),
+      el('div', 'wager-cat', finalClue().category || ''),
+      wagerStakes(),
+      el('p', 'wager-hint', 'Cada equipo apunta su apuesta en su hoja. Todavía no se ve la pista.')
+    );
+
+    const go = el('button', 'primary big', '¿Cuánto apuestan? →');
+    go.onclick = () => { wagerState().stage = 'bets'; save(); renderWager(); };
+
+    // On its own row underneath, and quiet about it: a period that has run out
+    // of time needs a way to the podium, but skipping is not the ordinary path.
+    const skip = el('button', 'ghost small', 'Saltar la apuesta');
+    skip.onclick = () => finishWager();
+
+    screen.append(stage, el('div', 'clue-controls', null, [
+      el('div', 'award-row', null, [go]),
+      el('div', 'award-row', null, [skip]),
+    ]));
+    root.append(screen);
+    fx.play('daily');
+    fx.confetti({ colors: ['#F8B31A', '#FDF8F1', '#E71F69', '#00A89F'], count: 90 });
+  }
+
+  /* Every team's bet, typed in before the clue exists.
+   *
+   * The teacher types them rather than each team pressing something, because
+   * there are no student devices in this game and never have been — the bets
+   * are already written on paper, and this is the teacher reading them across.
+   * Nothing can be entered that a team cannot afford, so a bet never has to be
+   * taken back after the clue.
+   */
+  function renderWagerBets() {
+    const w = wagerState();
+    const screen = wagerScreen('stage-bets');
+
+    const stage = el('div', 'wager-stage');
+    stage.append(
+      el('h2', 'wager-heading', '¿Cuánto apuestan?'),
+      el('p', 'wager-label', finalClue().category || ''),
+      // Again here, and not only on the screen before: this is the one the room
+      // sits looking at while the teacher types eight numbers, and it is the
+      // last moment a team can still change its mind.
+      wagerStakes()
+    );
+
+    const rows = el('div', rowsClass('wager-rows'));
+    const go = el('button', 'primary big', 'Ver la pista →');
+
+    const ready = () => {
+      go.disabled = w.bets.some(b => b === null || b === '' || Number.isNaN(Number(b)));
+    };
+
+    state.teams.forEach((team, i) => {
+      const cap = wagerCap(team);
+      const row = el('div', 'wager-row');
+      row.style.borderColor = team.color;
+
+      const who = el('div', 'wager-who');
+      who.append(teamBadge(team), el('span', 'wager-name', team.name),
+        el('span', 'wager-have', money(team.score)));
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.max = String(cap);
+      input.className = 'wager-input';
+      input.placeholder = '0';
+      // Re-clamped on the way in, not only on the way out: a score corrected
+      // through the Puntos panel can lower a cap under a bet already typed
+      // against the old one.
+      if (w.bets[i] !== null) {
+        if (w.bets[i] > cap) { w.bets[i] = cap; save(); }
+        input.value = String(w.bets[i]);
+      }
+
+      const commit = () => {
+        const raw = input.value.trim();
+        if (raw === '') { w.bets[i] = null; save(); return ready(); }
+        // Clamped rather than refused: a teacher mistyping 5000 for a team
+        // holding 500 should see the 500, not an error to read and undo.
+        const bet = Math.max(0, Math.min(cap, Math.round(Number(raw) || 0)));
+        w.bets[i] = bet;
+        if (String(bet) !== raw) input.value = String(bet);
+        save();
+        return ready();
+      };
+      input.oninput = commit;
+
+      const all = el('button', 'small', 'Todo');
+      all.onclick = () => { input.value = String(cap); commit(); };
+
+      // money('') is the currency symbol on its own — the packet may carry a
+      // peso sign, and a bare number box beside "$2400" would be the one
+      // amount on the screen with no unit on it.
+      row.append(who, el('div', 'wager-enter', null, [
+        el('span', 'wager-currency', money('')), input, all,
+      ]));
+      /* The cap, but only where it is news.
+       *
+       * For most teams it is their own score, already sitting two inches to
+       * the left, and printing it twice cost the room the team's NAME — eight
+       * rows of "L…" and "Las …" at two columns wide. It earns its place only
+       * on a team the floor is lifting, which is the one team that needs to
+       * know it can bet more than it holds.
+       */
+      if (cap !== team.score) row.append(el('span', 'wager-max lifted', 'máx. ' + money(cap)));
+      rows.append(row);
+    });
+
+    stage.append(rows);
+    /* Only where it is actually doing something. With every team already ahead
+     * of the top square the floor never comes up, and a line explaining a rule
+     * nobody is standing on is a line that makes the round sound complicated. */
+    if (state.teams.some(t => t.score < topValue())) {
+      stage.append(el('p', 'wager-hint',
+        `Un equipo con poco dinero puede apostar hasta ${money(topValue())}. Nadie baja de ${money(0)}.`));
+    }
+
+    go.onclick = () => { w.stage = 'clue'; save(); renderWager(); };
+    ready();
+
+    const back = el('button', 'ghost small', '← La categoría');
+    back.onclick = () => { w.stage = 'intro'; save(); renderWager(); };
+
+    screen.append(stage, el('div', 'clue-controls', null, [
+      el('div', 'award-row', null, [go]),
+      el('div', 'award-row', null, [back]),
+    ]));
+    root.append(screen);
+  }
+
+  /* The clue itself, and then who got it.
+   *
+   * Shown, never read aloud with the text hidden the way the top rows are: the
+   * teams have money on this one and have to be able to read it again, and a
+   * listening test is not what the round is for.
+   *
+   * Each team is marked on its own. This is the only clue in the game where
+   * more than one team can be right, because each is playing against its own
+   * bet rather than racing the others to the points.
+   */
+  function renderWagerClue() {
+    const w = wagerState();
+    const clue = finalClue();
+    const screen = wagerScreen('stage-clue');
+
+    const head = el('div', 'clue-head');
+    head.append(
+      el('div', 'where', null, [
+        document.createTextNode(clue.category || ''),
+        document.createTextNode(' · '),
+        el('span', 'value', 'La Apuesta Final'),
+      ]),
+      el('div', 'note', 'Todos escriben. Las apuestas ya están hechas.')
+    );
+
+    const body = el('div', 'clue-body');
+    body.append(el('p', 'prompt', clue.prompt));
+    if (clue.promptEn) body.append(englishToggle(clue.promptEn));
+
+    const answer = el('p', 'answer hidden', clue.answer || '');
+    const clock = el('div', 'timer');
+
+    const marks = el('div', rowsClass('wager-marks'));
+    const go = el('button', 'primary big', 'Ver los resultados →');
+    const ready = () => { go.disabled = w.right.some(r => r === null); };
+
+    state.teams.forEach((team, i) => {
+      const row = el('div', 'wager-mark');
+      row.style.borderColor = team.color;
+      row.append(teamBadge(team), el('span', 'wager-name', team.name),
+        el('span', 'wager-bet', money(Number(w.bets[i]) || 0)));
+
+      const yes = el('button', 'mark-yes', '✓');
+      const no = el('button', 'mark-no', '✗');
+      const paint = () => {
+        yes.classList.toggle('chosen', w.right[i] === true);
+        no.classList.toggle('chosen', w.right[i] === false);
+        row.classList.toggle('is-right', w.right[i] === true);
+        row.classList.toggle('is-wrong', w.right[i] === false);
+      };
+      yes.onclick = () => { w.right[i] = true; save(); paint(); ready(); };
+      no.onclick = () => { w.right[i] = false; save(); paint(); ready(); };
+      paint();
+
+      row.append(el('div', 'award-row', null, [yes, no]));
+      marks.append(row);
+    });
+
+    /* The same two lengths as a square, with the longer one suggested: this
+     * clue is read, thought about and bet on, and every team in the room is
+     * answering it rather than one team racing to it. */
+    const timerBtns = SECONDS.map(secs => {
+      const btn = el('button', 'small' + (secs === AUDIO_SECONDS ? ' suggested' : ''), `⏱ ${secs}s`);
+      btn.onclick = () => {
+        timerBtns.forEach(b => { b.disabled = true; });
+        startTimer(clock, secs);
+      };
+      return btn;
+    });
+    const timerGroup = el('div', 'timer-choice', null, timerBtns);
+    timerGroup.prepend(el('span', 'rate-label', 'Para escribir'));
+
+    const revealBtn = el('button', 'small', 'Mostrar la respuesta');
+    const showAnswer = () => {
+      answer.classList.remove('hidden');
+      screen.classList.add('answered');
+      revealBtn.disabled = true;
+    };
+    revealBtn.onclick = showAnswer;
+
+    go.onclick = () => { showAnswer(); scoreWager(); };
+    ready();
+
+    screen.append(head, clock, body, answer, el('div', 'clue-controls', null, [
+      el('p', 'hint', 'Marca ✓ o ✗ para cada equipo. Acierta: gana su apuesta. Falla: la pierde.'),
+      marks,
+      el('div', 'award-row', null, [go]),
+      el('div', 'award-row', null, [timerGroup, vocabButton('Ver vocabulario'), revealBtn]),
+    ]));
+    root.append(screen);
+    fx.play('open');
+  }
+
+  /* The sums, done once.
+   *
+   * `before` is kept rather than recomputed, so the result screen can show the
+   * climb and so a refresh in the middle of it cannot add a bet twice: the
+   * stage moves before anything is drawn.
+   */
+  function scoreWager() {
+    const w = wagerState();
+    w.before = state.teams.map(t => t.score);
+    state.teams.forEach((team, i) => {
+      const bet = Number(w.bets[i]) || 0;
+      /* The floor, and the one place this game ever subtracts anything. A bet
+       * is capped at the top square rather than at what a team holds, so
+       * without this a team that bet more than it had would finish behind
+       * where it started — a number no child should be shown for trying. */
+      team.score = w.right[i] ? team.score + bet : Math.max(0, team.score - bet);
+    });
+    w.stage = 'scored';
+    save();
+    renderWager();
+  }
+
+  function renderWagerResult() {
+    const w = wagerState();
+    const screen = wagerScreen('stage-result');
+
+    const stage = el('div', 'wager-stage');
+    stage.append(
+      el('h2', 'wager-heading', 'La respuesta era'),
+      el('div', 'wager-cat', finalClue().answer || '')
+    );
+
+    const rows = el('div', rowsClass('wager-rows'));
+    state.teams.forEach((team, i) => {
+      const bet = Number(w.bets[i]) || 0;
+      const from = w.before ? w.before[i] : team.score;
+      const row = el('div', 'wager-row result' + (w.right[i] ? ' is-right' : ' is-wrong'));
+      row.style.borderColor = team.color;
+
+      const swing = el('span', 'wager-swing', (w.right[i] ? '+' : '−') + money(bet));
+      const total = el('span', 'wager-total', money(from));
+
+      row.append(teamBadge(team), el('span', 'wager-name', team.name), swing, total);
+      rows.append(row);
+      // Each total climbs from where it was, staggered down the list, so the
+      // room reads one change at a time instead of eight at once.
+      setTimeout(() => {
+        if (total.isConnected) fx.countUp(total, from, team.score, money);
+      }, 250 + i * 260);
+    });
+
+    const go = el('button', 'primary big', 'Al podio →');
+    go.onclick = () => finishWager();
+
+    stage.append(rows);
+    screen.append(stage, el('div', 'clue-controls', null, [el('div', 'award-row', null, [go])]));
+    root.append(screen);
+    fx.play(state.teams.some((t, i) => w.right[i]) ? 'fanfare' : 'none');
+  }
+
+  /* Done with the round, however it ended — played out or skipped.
+   *
+   * The podium celebrates either way: `celebrateFinish` is normally spent by
+   * the board emptying, and the board emptied several screens ago.
+   */
+  function finishWager() {
+    wagerState().stage = 'done';
+    save();
+    celebrateFinish = true;
+    renderBoard();
   }
 
   /* The final standings, on a podium.
@@ -561,6 +996,12 @@
       }
       box.append(teamBadge(t), el('span', null, t.name), pts);
       if ((t.streak || 0) >= STREAK) box.append(el('span', 'streak', `🔥${t.streak}`));
+      /* The quickest way in, and the one a teacher finds without being told:
+       * the wrong number is on the screen, so press the wrong number. It opens
+       * the same panel the Puntos button does, with this team's box selected.
+       */
+      box.title = 'Ajustar la puntuación';
+      box.onclick = () => openScores(i);
       // The team that just scored: its box jumps and its total climbs from the
       // old score, so the room sees whose points those were.
       if (pendingScore && pendingScore.index === i) {
@@ -586,6 +1027,103 @@
 
   function bankItems() {
     return Array.isArray(room.items) ? room.items : [];
+  }
+
+  /* ---------- correcting a score ---------- */
+
+  /* The teacher's override, for when the screen and the room disagree.
+   *
+   * The board awards points by a tap, and the tap is sometimes the wrong team:
+   * two teams reading at once, a name misheard, an answer accepted and then
+   * argued out of. Until this existed the only way back was Reiniciar, which
+   * throws away the period. It also covers the things the board cannot know
+   * about at all — a bonus for the team that used the whole sentence, a point
+   * docked for shouting over another team.
+   *
+   * Every team is editable whenever it opens, not only the one that was
+   * tapped, because the usual correction is a pair: take it off one team and
+   * put it on another.
+   */
+  function scoreButton() {
+    const btn = el('button', 'small', 'Puntos');
+    btn.onclick = () => openScores();
+    return btn;
+  }
+
+  // The step the quick buttons move in: the cheapest square on the board, which
+  // is the smallest amount this game ever deals in.
+  function scoreStep() {
+    const values = game.categories.flatMap(c => c.clues.map(q => Number(q.value) || 0)).filter(Boolean);
+    return values.length ? Math.min(...values) : 100;
+  }
+
+  function openScores(focus) {
+    const screen = el('section', 'clue-screen');
+    const head = el('div', 'clue-head');
+    head.append(el('div', 'where', 'Ajustar la puntuación'),
+      el('div', 'note', '¿Tocaste el equipo equivocado? Corrígelo aquí.'));
+
+    const body = el('div', 'clue-body check');
+    const rows = el('div', rowsClass('wager-rows'));
+    const step = scoreStep();
+    let focused = null;
+
+    state.teams.forEach((team, i) => {
+      const row = el('div', 'wager-row');
+      row.style.borderColor = team.color;
+
+      const who = el('div', 'wager-who');
+      who.append(teamBadge(team), el('span', 'wager-name', team.name));
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.className = 'wager-input';
+      input.value = String(team.score);
+      if (i === focus) focused = input;
+
+      /* Typed or stepped, one place applies it. Straight onto the team rather
+       * than into a draft the panel saves on the way out: there is no Guardar
+       * button to forget, and a teacher who closes this with the X has still
+       * made the change they watched happen. */
+      const set = value => {
+        // Floored, like every other score in this game. Nothing here subtracts
+        // past zero, so a correction must not be the one thing that does.
+        team.score = Math.max(0, Math.round(Number(value) || 0));
+        input.value = String(team.score);
+        save();
+      };
+      input.oninput = () => {
+        const raw = input.value.trim();
+        // Mid-typing an empty box is not a score of zero; leave it until there
+        // is a number in it.
+        if (raw === '') return;
+        team.score = Math.max(0, Math.round(Number(raw) || 0));
+        save();
+      };
+      input.onblur = () => set(input.value);
+
+      const down = el('button', 'small', '−' + money(step));
+      down.onclick = () => set(team.score - step);
+      const up = el('button', 'small', '+' + money(step));
+      up.onclick = () => set(team.score + step);
+
+      row.append(who, el('div', 'wager-enter', null, [
+        down, el('span', 'wager-currency', money('')), input, up,
+      ]));
+      rows.append(row);
+    });
+
+    body.append(rows);
+
+    const close = el('button', 'primary', 'Volver');
+    // Back through renderBoard rather than by removing this screen: the score
+    // strip, the crown and the standings are all drawn from what just changed.
+    close.onclick = () => renderBoard();
+
+    screen.append(head, body, el('div', 'clue-controls', null, [close]));
+    root.append(screen);
+    if (focused) { focused.focus(); focused.select(); }
   }
 
   // Two-click confirm rather than a browser dialog: a modal on a projector is a

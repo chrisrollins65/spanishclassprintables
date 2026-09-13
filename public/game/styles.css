@@ -319,6 +319,11 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .score.active { border-width: 3px; font-weight: 800; }
 .score .pts { font-weight: 800; color: var(--gold); }
+/* The strip is the shortcut into the score panel (openScores), so it has to say
+   it is touchable — quietly. It sits under the board all game and must not read
+   as another row of buttons to press. */
+.score { cursor: pointer; }
+.score:hover { border-color: var(--muted); }
 
 /* ---------- Clue overlay ---------- */
 
@@ -1236,6 +1241,170 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
 
 .verdict.win { animation: pop-in 0.55s cubic-bezier(.2, 1.5, .4, 1) both; }
 
+/* ---------- La Apuesta Final ---------- */
+
+/* The wager round takes the whole screen for three or four beats: the
+   category, the bets, the clue, the result. It borrows .board-screen's column
+   layout and the clue screen's head/body/controls, so only what is new to the
+   round is described here.
+
+   The round is the one part of the game with a number to type into, which is
+   why the inputs are sized the way they are: a projector at the front of the
+   room and a teacher at arm's length are not the same viewing distance, and
+   these are read at both. */
+.wager-screen { justify-content: flex-start; }
+
+/* `isolation` is load-bearing: the sunburst below sits at z-index -1 so the
+   title paints over it, and without a stacking context here it drops behind
+   this element's own background instead and disappears. .dd-splash gets the
+   same effect for free from its own z-index. */
+.wager-stage {
+  flex: 1; min-height: 0; overflow: hidden; isolation: isolate;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(0.4rem, 1.8vh, 1.2rem);
+  text-align: center; position: relative;
+}
+
+/* The same turning sunburst as the Daily Double, and deliberately so: the
+   room has seen it once already and learned that it means money. The radial
+   ground under it comes from the same place, and does the same job — without
+   it the rays run flat to all four edges and the title has nothing to sit on. */
+.stage-intro .wager-stage {
+  background: radial-gradient(circle at 50% 45%, #43113C 0%, var(--ground) 72%);
+}
+.wager-burst {
+  position: absolute; left: 50%; top: 45%;
+  width: 250vmax; height: 250vmax; margin: -125vmax 0 0 -125vmax;
+  z-index: -1;
+  background: repeating-conic-gradient(
+    rgba(248, 179, 26, 0.2) 0deg 9deg, transparent 9deg 18deg,
+    rgba(190, 0, 135, 0.30) 18deg 27deg, transparent 27deg 36deg);
+  animation: dd-spin 30s linear infinite;
+}
+
+.wager-title {
+  margin: 0;
+  font-size: clamp(2rem, min(9vw, 13vh), 7rem);
+  font-weight: 900; letter-spacing: 0.02em; line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 0.06em 0 #7A5400, 0 0 0.5em rgba(248, 179, 26, 0.45);
+  animation: dd-title-in 0.6s cubic-bezier(.2, 1.4, .4, 1) backwards;
+}
+.wager-heading {
+  margin: 0; font-weight: 800;
+  font-size: clamp(1.3rem, min(4.5vw, 6vh), 3rem);
+}
+.wager-label {
+  margin: 0; color: var(--muted);
+  font-size: clamp(0.8rem, min(2vw, 2.6vh), 1.3rem);
+  text-transform: uppercase; letter-spacing: 0.12em;
+}
+/* The one thing a team bets on, so it is the biggest thing on the screen after
+   the title — and it is a phrase rather than a word, so it wraps. */
+.wager-cat {
+  font-weight: 900; line-height: 1.1; max-width: 18ch;
+  font-size: clamp(1.6rem, min(7vw, 10vh), 5rem);
+  animation: pop-in 0.5s 0.35s cubic-bezier(.2, 1.5, .4, 1) backwards;
+}
+.wager-hint {
+  margin: 0; color: var(--muted); max-width: 40ch;
+  font-size: clamp(0.75rem, 1.9vh, 1.05rem);
+}
+
+/* The terms of the bet. Not muted like .wager-hint — this is the rule of the
+   round, not a note about it, so it is set at the size of something meant to be
+   read from the back of the room, in the two colours the verdict uses. Wraps to
+   two lines when the screen is too narrow to hold both clauses side by side. */
+.wager-stakes {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 0.4rem clamp(0.8rem, 3vw, 2.2rem);
+  font-size: clamp(0.85rem, min(2.2vw, 2.8vh), 1.5rem); font-weight: 700;
+}
+.wager-stakes .win { color: var(--ok); }
+.wager-stakes .lose { color: var(--bad); }
+
+.wager-rows {
+  display: flex; flex-direction: column; gap: clamp(0.25rem, 0.9vh, 0.6rem);
+  width: min(46rem, 100%); overflow-y: auto; padding: 0.2rem;
+}
+/* Five teams and up (see rowsClass). auto-fit rather than a flat two columns,
+   so a narrow window folds them back into one list instead of squeezing two
+   columns of unreadable rows. */
+.wager-rows.two-up, .wager-marks.two-up {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+  gap: clamp(0.25rem, 0.9vh, 0.6rem) 0.8rem;
+  width: min(62rem, 100%);
+}
+.wager-row, .wager-mark {
+  display: flex; align-items: center; gap: clamp(0.4rem, 1.4vw, 1rem);
+  border: 3px solid var(--edge); border-radius: 0.7rem;
+  background: var(--panel); padding: clamp(0.25rem, 0.9vh, 0.6rem) 0.8rem;
+  font-size: clamp(0.85rem, min(2.1vw, 2.6vh), 1.4rem);
+}
+.wager-who { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; }
+.wager-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wager-have, .wager-bet { color: var(--gold); font-weight: 800; }
+/* Only ever shown on a team the betting floor is lifting, so it is the gold of
+   the other money on the row rather than muted grey — it is the good news. */
+.wager-max { color: var(--gold); font-size: 0.8em; white-space: nowrap; }
+
+.wager-enter { display: flex; align-items: center; gap: 0.4rem; }
+.wager-currency { color: var(--gold); font-weight: 800; }
+/* Big enough to read from the middle of the room when a team asks the teacher
+   to confirm what was typed, and wide enough for five figures.
+
+   The spinner arrows are gone deliberately. They sit inside the field and took
+   about a third of it, so a clamped "2400" scrolled its own first digits out of
+   sight — and one-dollar steps are no use for a bet that moves in hundreds. */
+.wager-input {
+  /* Five digits, plus the padding and border that a global border-box would
+     otherwise take out of them — without the em term a clamped "2400" scrolls
+     its own first digit out of the field. */
+  width: calc(5ch + 1.4em); text-align: right; font-weight: 800;
+  font-size: clamp(1rem, min(2.6vw, 3.2vh), 1.8rem);
+  padding: 0.15em 0.35em; border-radius: 0.4rem;
+  border: 2px solid var(--edge); background: var(--cell); color: var(--ink);
+  appearance: textfield; -moz-appearance: textfield;
+}
+.wager-input::-webkit-outer-spin-button,
+.wager-input::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.wager-input:focus { outline: 3px solid var(--gold); outline-offset: 1px; }
+
+/* This clue shares the screen with a row per team, where a square's clue has
+   the whole of it. So it is set smaller than .prompt — still the biggest thing
+   on the screen, but sized to leave the eight rows that decide the game
+   visible underneath it rather than scrolled off. */
+.stage-clue .prompt { font-size: clamp(1.2rem, min(4vw, 5.5vh), 3.2rem); max-width: 30ch; }
+
+.wager-marks {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  width: min(46rem, 100%); max-height: 38vh; overflow-y: auto; padding: 0.2rem;
+}
+.wager-mark .wager-name { flex: 1; }
+.mark-yes, .mark-no {
+  font-weight: 900; line-height: 1; padding: 0.2em 0.6em;
+  font-size: clamp(0.9rem, min(2.4vw, 3vh), 1.6rem);
+}
+/* Unchosen, both read as "not yet answered" rather than as an opinion; chosen,
+   the row itself takes the colour, because from the back of the room a tick
+   inside a button is smaller than the row it is in. */
+.mark-yes.chosen { background: var(--ok); color: var(--on-bright); border-color: var(--ok); }
+.mark-no.chosen { background: var(--bad); color: var(--on-bright); border-color: var(--bad); }
+/* The verdict tints the row's GROUND, not its border. The border carries the
+   team's own colour as an inline style — it is how a team is picked out
+   everywhere else on this site — so it both wins the cascade and should. */
+.wager-mark.is-right, .wager-row.result.is-right { background: #23351F; }
+.wager-mark.is-wrong, .wager-row.result.is-wrong { background: #35211C; }
+
+.wager-row.result .wager-name { flex: 1; }
+.wager-swing { font-weight: 900; }
+.wager-row.result.is-right .wager-swing { color: var(--ok); }
+.wager-row.result.is-wrong .wager-swing { color: var(--bad); }
+.wager-total {
+  font-weight: 900; color: var(--gold); min-width: 5ch; text-align: right;
+  font-size: clamp(1rem, min(2.8vw, 3.4vh), 2rem);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .team-badge.spin, .board.intro .cat, .board.intro .clue-cell,
   .clue-screen.dd-revealed .where .value,
@@ -1249,6 +1418,7 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   .timer.urgent .timer-num, .timer.done,
   .call-view.fresh .bingo-ball, .call-view.fresh > :not(.bingo-ball),
   .verdict.win, .flash-card.arrive, .flash-card.turned,
+  .wager-burst, .wager-title, .wager-cat,
   .answer:not(.hidden) { animation: none; }
   .timer-ring .bar { transition: none; }
   .clue-cell:not([disabled]):hover { transform: none; }

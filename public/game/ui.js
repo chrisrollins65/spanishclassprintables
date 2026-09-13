@@ -156,6 +156,12 @@
     return String(text || '').replace(/_{2,}/g, ',');
   }
 
+  // Is there anything in here a voice would actually read? Punctuation and
+  // spaces on their own are not words, however much text they are made of.
+  function hasWords(text) {
+    return /[\p{L}\p{N}]/u.test(String(text || ''));
+  }
+
   /* The pieces a sentence with blanks is read in.
    *
    * Every piece with a blank after it is given a comma it did not have. The
@@ -239,13 +245,21 @@
     if (pieces.length < 2 || !fx || !fx.gapTone) return sayPart(speakable(text), rate, run);
 
     /* The sentence as a run of steps: a piece to say, and null for each blank
-     * between two of them. An empty piece — a blank at the very start or end of
-     * the sentence — drops out, and with it any second beep in a row, so two
-     * can never land back to back. */
+     * between two of them. A piece with nothing to SAY in it — a blank at the
+     * very start or end of the sentence — drops out, and with it any second
+     * beep in a row, so two can never land back to back.
+     *
+     * "Nothing to say" means no letters and no digits, not merely no
+     * whitespace. A gap at the end of a sentence leaves the full stop behind as
+     * a piece of its own, and an engine handed an utterance that is only a full
+     * stop reads out the NAME of the mark: "Comemos ___." was spoken as
+     * "Comemos [beep] punto". Punctuation trailing a blank belongs to the
+     * blank, and a blank is a beep — there is nothing there to read.
+     */
     const steps = [];
     pieces.forEach((piece, i) => {
       if (i && steps[steps.length - 1] !== null) steps.push(null);
-      if (/\S/.test(piece)) steps.push(piece);
+      if (hasWords(piece)) steps.push(piece);
     });
     const last = steps.length - 1;
 
