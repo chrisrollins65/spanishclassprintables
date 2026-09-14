@@ -8,7 +8,9 @@
 <meta property="og:title" content="Spanish Class Printables">
 <meta property="og:description" content="No-prep Spanish worksheets and classroom games for teachers.">
 <meta property="og:image" content="{{ url('/site/cover-la-familia.jpg') }}">
-<link rel="icon" href="/favicon.ico">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" href="/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 @if ($turnstile)
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 @endif
