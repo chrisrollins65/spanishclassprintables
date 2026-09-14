@@ -47,4 +47,13 @@ return [
         'retention_days' => env('PIN_ASSET_RETENTION_DAYS', 14),
     ],
 
+    // Cloudflare Turnstile on the homepage contact form. Off unless both keys
+    // are set; the form's other spam checks work without it. The same variable
+    // names as Eat Well Planner's, but a widget's keys only work on the
+    // hostnames it lists, so add this site's hostname there or make a new one.
+    'turnstile' => [
+        'site_key' => env('TURNSTILE_SITE_KEY'),
+        'secret_key' => env('TURNSTILE_SECRET_KEY'),
+    ],
+
 ];

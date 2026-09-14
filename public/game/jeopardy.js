@@ -1156,7 +1156,9 @@
     // What this square actually pays. The board still shows the plain value —
     // the double is the surprise, and printing it would give the square away.
     const value = daily ? clue.value * 2 : clue.value;
-    const screen = el('section', 'clue-screen' + (daily ? ' daily' : ''));
+    // `quiz-clue` is what a phone on its side scrolls as a whole (styles.css);
+    // the other clue screens keep their pinned buttons.
+    const screen = el('section', 'clue-screen quiz-clue' + (daily ? ' daily' : ''));
 
     if (daily) screen.append(el('div', 'daily-banner', '¡DOBLE DIARIO!'));
 

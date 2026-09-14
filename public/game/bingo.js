@@ -338,7 +338,9 @@
   // rolling the ball in a second time would read as a new word.
   function renderCaller(fresh = false) {
     root.innerHTML = '';
-    const screen = el('section', 'board-screen');
+    // `bingo-caller` is what lets this screen scroll like a page on a phone,
+    // where the quiz board (the other .board-screen) must not — see styles.css.
+    const screen = el('section', 'board-screen bingo-caller');
 
     const progress = el('div', 'turn-pill');
     progress.append(

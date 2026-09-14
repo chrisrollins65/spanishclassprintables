@@ -9,6 +9,9 @@
 <meta property="og:description" content="No-prep Spanish worksheets and classroom games for teachers.">
 <meta property="og:image" content="{{ url('/site/cover-la-familia.jpg') }}">
 <link rel="icon" href="/favicon.ico">
+@if ($turnstile)
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+@endif
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -412,6 +415,11 @@
             <label for="website">Leave this empty</label>
             <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
           </div>
+          {{-- When the form was shown, for ContactController's too-fast check.
+               A resend after an error keeps the first one. --}}
+          <input type="hidden" name="started" value="{{ old('started') ?: $contactStarted }}">
+          {{-- Filled in by the script below on the first touch of the form. --}}
+          <input type="hidden" name="human" value="">
 
           <div class="row">
             <div>
@@ -443,6 +451,28 @@
                       placeholder="Which packet or game, and what would make it better?">{{ old('message') }}</textarea>
             @error('message') <p class="error">{{ $message }}</p> @enderror
           </div>
+
+          {{-- Without JavaScript the script can't answer the human check, so
+               the visitor does. With Turnstile on there is no way through
+               without JavaScript, so say so instead. --}}
+          <noscript>
+            @if ($turnstile)
+              <p class="error">Please turn on JavaScript to send a message.</p>
+            @else
+              <div>
+                <label for="human_answer">What color is the sky? <span class="opt">(type “blue” — it shows you're not a robot)</span></label>
+                <input id="human_answer" name="human_answer" type="text" maxlength="20" autocomplete="off">
+              </div>
+            @endif
+          </noscript>
+          @error('human') <p class="error">{{ $message }}</p> @enderror
+
+          @if ($turnstile)
+            <div>
+              <div class="cf-turnstile" data-sitekey="{{ config('services.turnstile.site_key') }}" data-theme="light"></div>
+              @error('turnstile') <p class="error">{{ $message }}</p> @enderror
+            </div>
+          @endif
 
           <div>
             <button class="btn btn-primary" type="submit">
@@ -476,6 +506,14 @@
     var form = document.querySelector('.contact-form');
     if (!form) return;
     var button = form.querySelector('button[type=submit]');
+
+    /* The human check, as on Eat Well Planner: a real visitor focuses, clicks
+       or types somewhere in the form before sending, and that fills in the
+       answer. A bot that posts the form without running the page never does. */
+    function markHuman() { form.elements.human.value = @js(\App\Http\Controllers\ContactController::HUMAN_ANSWER); }
+    ['focusin', 'pointerdown', 'keydown'].forEach(function (type) {
+      form.addEventListener(type, markHuman, { once: true });
+    });
 
     function reset() {
       button.disabled = false;

@@ -48,6 +48,11 @@
    wrapped six-team score strip push itself off the bottom of the screen. */
 html, body, #app { height: 100%; overflow: hidden; }
 
+/* Phones re-size text they think is too small to read, and do it unevenly —
+   a phone turned sideways inflates some lines and not others. Every size here
+   is already chosen; see the Phones section at the end for how they change. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 body {
   margin: 0;
   background: var(--ground);
@@ -1422,4 +1427,223 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   .answer:not(.hidden) { animation: none; }
   .timer-ring .bar { transition: none; }
   .clue-cell:not([disabled]):hover { transform: none; }
+}
+
+/* ---------- Phones ---------- */
+
+/* The other way these games get played: a small class with no projector, and
+   the teacher reading the caller off the phone in their hand. Everything above
+   is sized for a wall, and two of its decisions are wrong for a hand.
+
+   The first is the one-screen layout that never scrolls. It is right on a
+   projector, where nobody can reach a scrollbar; on a phone, page scrolling is
+   the one thing that copes with everything a phone does to a window — text set
+   larger, a browser toolbar sitting over the bottom of the page, a keyboard —
+   and a Start button under the toolbar of a page that will not scroll cannot
+   be pressed at all. So on a small screen the setup screens and the bingo
+   caller become ordinary pages. The quiz board stays fixed: it is a grid that
+   has to be seen whole.
+
+   Every part of the switch is keyed on :has(), so it arrives whole or not at
+   all. A browser that can't read it keeps the locked layout, rather than an
+   unlocked screen inside a locked page that scrolls nowhere.
+
+   Sideways counts too (max-height): a phone on its side is 340px tall, and
+   the bingo setup does not fit in that either. */
+@media (max-width: 600px), (max-height: 500px) {
+  html:has(#app > .centered, #app > .bingo-caller) {
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  html:has(#app > .centered, #app > .bingo-caller) body,
+  html:has(#app > .centered, #app > .bingo-caller) #app {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Still at least a screen tall, so a short setup keeps sitting in the middle
+     of it. The extra room at the bottom is for the thumb, and for the toolbars
+     that float over the last few lines of a page. */
+  html:has(#app > .centered) #app > .centered {
+    min-height: 100vh;
+    min-height: 100svh;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: 2.5rem;
+  }
+
+  /* The call takes what the screen has left and the controls sit under it, at
+     the bottom where the thumb already is. A long clue with its English shown
+     pushes them down the page instead of being drawn over them. */
+  html:has(#app > .bingo-caller) .bingo-caller {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100svh;
+    overflow: visible;
+    padding-bottom: 2rem;
+  }
+  html:has(#app > .bingo-caller) .bingo-caller .call-stage { flex: 1 0 auto; padding: 0.5rem 0; }
+
+  /* A panel over the page scrolls itself; reaching its end should not start
+     scrolling the page hidden behind it. */
+  .clue-body { overscroll-behavior: contain; }
+
+  /* Sized by the width here, not the height: a card checked on a phone is read
+     at arm's length, and the height-first box above made it a postage stamp on
+     a screen that is tall and narrow. The panel scrolls if it has to. */
+  .card-grid { height: auto; width: min(100%, 24rem, 80vh); max-width: none; }
+  .card-cell { font-size: 0.7rem; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: anywhere; }
+
+  /* The top bar's three equal columns leave a phone about a hundred pixels for
+     each, and five buttons do not go in a hundred pixels — they stood in a
+     column down the side, over the counter and the title. Here it is one
+     flowing row instead: the controls' own row dissolves (display: contents)
+     so each button can be placed on its own, the topic takes whatever width
+     is left and keeps fitting itself to it (fitText in ui.js), and anything
+     that does not fit wraps under, centred. */
+  .topbar { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.3rem 0.4rem; }
+  .topbar > .award-row { display: contents; }
+  .topbar > :first-child { order: 1; flex: 0 1 auto; min-width: 0; }
+  /* A basis, not 0: with none the buttons fill the first row first and the
+     topic is left a sliver to shrink its text into. */
+  .topbar > .topic-wrap { order: 2; flex: 1 1 5rem; }
+  /* The pill's padding is sized to be spotted across a room; at arm's length
+     it was the width that kept the icons off the first row of a 360px phone. */
+  .topbar .turn-pill { padding: 0.3em 0.75em; gap: 0.4rem; }
+  .topbar .turn-pill .label { letter-spacing: 0.06em; }
+  .topbar > .award-row > * { order: 5; }
+  /* The two icons stay up beside the topic: they are the narrowest things on
+     the bar, so they cost the topic least, and leaving them there is what gets
+     the worded buttons under it onto one line. After the rule above, which
+     matches them too with the same weight. */
+  .topbar > .award-row > .fx-mute, .topbar > .award-row > .howto-btn { order: 3; }
+  .call-audio { font-size: clamp(2.5rem, min(14vw, 17vh), 12rem); }
+}
+
+@media (max-width: 600px) {
+  /* Upright, the worded buttons always go on a second row, whether or not the
+     first could squeeze one more in: a button that jumps between the rows as
+     the counter grows from "9" to "10" is one the teacher has to look for.
+     A zero-height item the width of the bar is the line break (order 4,
+     between the icons and the words). */
+  .topbar::after { content: ''; order: 4; flex-basis: 100%; height: 0; }
+
+  /* The one button pressed every turn, the whole width of the phone. */
+  .bingo-caller .clue-controls > .award-row { width: 100%; }
+  .bingo-caller .clue-controls .award-row > .big { flex: 1 1 100%; justify-content: center; }
+
+  /* Three columns of words in 350px wrapped every article onto a line of its own. */
+  .called-list { columns: 2; column-gap: 1.2rem; width: 100%; font-size: 1rem; }
+
+  /* The word list's column minimum missed two columns on a 390px phone by a
+     few pixels, and thirty words in one column is a list scrolled past rather
+     than glanced at. */
+  .vocab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem 1rem; }
+
+  /* The card's word was sized by the height alone, which on a tall phone is a
+     size no narrow card can hold. */
+  .flash-main { font-size: clamp(2rem, min(12vh, 11vw), 8rem); }
+  /* Shorter, and its three buttons narrower, so the card, ← 🔊 → and the
+     options under them are all on the phone at once rather than scrolled to. */
+  button.flash-card { padding: 1rem; min-height: clamp(8rem, 30vh, 26rem); }
+  .flash .award-row button { padding: 0.6em 0.9em; }
+}
+
+/* ---------- The quiz on a phone ---------- */
+
+/* On its side, a phone shows the whole board well: five columns want width,
+   and 740x340 has it. What it has none of is height, and three screens were
+   built around a fixed column that shrinks its middle to fit. At 340px the
+   middle is gone — the clue was one line with the teacher's buttons under it,
+   the bets were one team in a 40px window, the podium's steps a sliver. Those
+   three scroll as a page instead, the way the setup screens do (see Phones
+   above, and why it is all keyed on :has()). The board itself stays fixed:
+   it fits, and it has to be seen whole. */
+@media (max-height: 500px) {
+  html:has(#app > .wager-screen, #app > .board-screen > .podium-screen) {
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  html:has(#app > .wager-screen, #app > .board-screen > .podium-screen) body,
+  html:has(#app > .wager-screen, #app > .board-screen > .podium-screen) #app {
+    height: auto;
+    overflow: visible;
+  }
+  html:has(#app > .wager-screen, #app > .board-screen > .podium-screen) #app > .board-screen {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100svh;
+    overflow: visible;
+    padding-bottom: 2rem;
+  }
+  /* The stage keeps its overflow: hidden, which is what holds the sunburst in;
+     it only stops giving up height. The lists inside it stop scrolling on
+     their own, since the page now does. */
+  html:has(#app > .wager-screen) .wager-stage { flex: 1 0 auto; padding-block: 0.5rem; }
+  html:has(#app > .wager-screen) .wager-rows,
+  html:has(#app > .wager-screen) .wager-marks { overflow: visible; max-height: none; }
+  html:has(#app > .board-screen > .podium-screen) .podium-screen { flex: 1 0 auto; }
+  html:has(#app > .board-screen > .podium-screen) .podium { flex: 1 0 15rem; }
+
+  /* A clue is a panel over the board rather than a page, so the panel scrolls:
+     the whole clue first, then the buttons that award it. Before, the buttons
+     kept their height and the clue got what was left, which was one line. */
+  .quiz-clue { overflow-y: auto; overscroll-behavior: contain; gap: 0.6rem; }
+  .quiz-clue .clue-body { flex: none; overflow: visible; gap: 0.5rem; }
+}
+
+/* Upright, the board is five columns in 360px: squares a thumb covers and
+   category names broken a letter at a time. Rather than a board nobody can
+   read, the game asks for the phone to be turned — once it has started. The
+   setup is a form, and a form works upright, so the teams can be named before
+   the phone goes on its side.
+
+   Two layers because only one of them moves: the backdrop and its words stay
+   still (body::before), the phone on top of them turns (body::after). Being
+   on the body, over everything at a z-index nothing else uses, it also takes
+   the taps, so nothing underneath is pressed by accident. */
+@media (orientation: portrait) and (max-width: 600px) {
+  html:has(#app > .board-screen:not(.bingo-caller)) body::before {
+    content: 'Gira el teléfono\A\A Turn your phone sideways to play';
+    white-space: pre-line;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10rem 1.5rem 0;
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 800;
+    line-height: 1.3;
+    background: var(--ground);
+    color: var(--ink);
+  }
+  html:has(#app > .board-screen:not(.bingo-caller)) body::after {
+    content: '📱';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 1001;
+    width: 6rem;
+    height: 6rem;
+    margin: -8rem 0 0 -3rem;
+    display: grid;
+    place-items: center;
+    font-size: 4.5rem;
+    line-height: 1;
+    animation: turn-phone 2.4s ease-in-out infinite;
+    pointer-events: none;
+  }
+}
+@keyframes turn-phone {
+  0%, 25%   { transform: rotate(0); }
+  50%, 85%  { transform: rotate(-90deg); }
+  100%      { transform: rotate(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:has(#app > .board-screen:not(.bingo-caller)) body::after { animation: none; transform: rotate(-90deg); }
 }

@@ -18,7 +18,7 @@ class ContactMessage extends Model
         'other' => 'Something else',
     ];
 
-    protected $fillable = ['name', 'email', 'topic', 'message'];
+    protected $fillable = ['name', 'email', 'topic', 'message', 'spam_reason'];
 
     public function topicLabel(): string
     {

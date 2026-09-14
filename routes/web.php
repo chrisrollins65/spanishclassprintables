@@ -10,7 +10,11 @@ use Illuminate\Support\Facades\Route;
  * The homepage is where a buyer lands from the address printed on a packet:
  * thanks and a review ask first, then the room code box, then contact.
  */
-Route::get('/', fn () => view('home', ['topics' => ContactMessage::TOPICS]));
+Route::get('/', fn () => view('home', [
+    'topics' => ContactMessage::TOPICS,
+    'contactStarted' => ContactController::startedToken(),
+    'turnstile' => ContactController::turnstileEnabled(),
+]));
 
 // A teacher has no reason to send more than a couple; this only stops floods.
 Route::post('/contact', [ContactController::class, 'store'])
