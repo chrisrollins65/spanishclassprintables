@@ -29,6 +29,12 @@
   }
 
   async function start() {
+    // A teacher's own game (/my-games/{id}/play) names its payload on the page.
+    // It is private to a logged-in teacher, so there is no code to type, and it
+    // is not kept offline: the worker only looks after /j.
+    const ownGameUrl = app.dataset.payloadUrl;
+    if (ownGameUrl) return startOwnGame(ownGameUrl);
+
     const code = codeFromUrl();
     if (!code) return renderCodeEntry();
 
@@ -47,7 +53,22 @@
       return renderCodeEntry('No pudimos conectar con el sitio. Revisa la conexión a internet e inténtalo de nuevo.');
     }
     keepOffline(payloadUrl);
+    mountRoom(room);
+  }
 
+  async function startOwnGame(payloadUrl) {
+    let room;
+    try {
+      const res = await fetch(payloadUrl, { credentials: 'same-origin', cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      room = await res.json();
+    } catch {
+      return renderMessage('No pudimos abrir este juego. Revisa la conexión a internet y vuelve a tus juegos.', '/my-games', 'Mis juegos');
+    }
+    mountRoom(room);
+  }
+
+  function mountRoom(room) {
     const available = Object.keys(room.games || {}).filter(k => MODES[k]);
     if (!available.length) return renderCodeEntry('Esta sala no tiene juegos todavía.');
     if (available.length === 1) return MODES[available[0]].mount(app, room);
@@ -77,6 +98,22 @@
         reg.active.postMessage({ type: 'keep', urls: [...urls, '/game/logo.png', payloadUrl] });
       })
       .catch(() => {});
+  }
+
+  function renderMessage(message, href, label) {
+    app.innerHTML = '';
+    const wrap = document.createElement('section');
+    wrap.className = 'centered setup';
+    const p = document.createElement('p');
+    p.className = 'error';
+    p.textContent = message;
+    // A button, not a link: the game's styles dress buttons only.
+    const back = document.createElement('button');
+    back.className = 'primary';
+    back.textContent = label;
+    back.onclick = () => { location.href = href; };
+    wrap.append(window.RoomUI.brandMark('full'), p, back);
+    app.append(wrap);
   }
 
   function renderCodeEntry(message) {

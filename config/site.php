@@ -19,6 +19,21 @@ return [
     'demo_room_code' => env('DEMO_ROOM_CODE', ''),
 
     /*
+     * Rooms nobody may copy into their own account (TeacherGameController).
+     * The demo games are free to everyone, so a private, editable copy of one
+     * would be a free game once games are sold here.
+     *
+     * The demo this environment links to is included automatically, and the
+     * demos that have ever been in circulation are listed by hand as well: an
+     * environment with no DEMO_ROOM_CODE set must not quietly make them
+     * claimable.
+     */
+    'unclaimable_codes' => array_values(array_unique(array_filter(array_map(
+        fn ($code): string => strtoupper(trim((string) $code)),
+        ['PRUEBA', 'DEMO1', 'DEMO2', env('DEMO_ROOM_CODE', '')],
+    )))),
+
+    /*
      * MailerLite's popup signup form, from the old subscribepage.io landing
      * page. The homepage only opens it; the form itself is edited in MailerLite.
      */

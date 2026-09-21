@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ThrottleAccountMail;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -25,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
             // session, so there is no CSRF token to send.
             'api/internal/pin-asset',
         ]);
+
+        $middleware->web(append: [ThrottleAccountMail::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

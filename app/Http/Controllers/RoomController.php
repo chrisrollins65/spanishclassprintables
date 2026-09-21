@@ -44,11 +44,46 @@ class RoomController extends Controller
      */
     public function show(?string $code = null): Response
     {
+        return response(self::shell())
+            ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * The game shell, ready to serve.
+     *
+     * A teacher's own game plays in this same shell (TeacherGameController),
+     * told where its payload lives through `data-payload-url` on #app instead
+     * of reading a room code out of the URL. That attribute is the only
+     * difference between the two, so neither can drift from the other.
+     */
+    public static function shell(?string $payloadUrl = null): string
+    {
         $shell = public_path('game/room.html');
         abort_unless(is_file($shell), 404);
 
-        return response($this->versionAssets(file_get_contents($shell)))
-            ->header('Content-Type', 'text/html; charset=UTF-8');
+        $html = self::versionAssets(file_get_contents($shell));
+
+        if ($payloadUrl !== null) {
+            $html = str_replace('<main id="app">', '<main id="app" data-payload-url="'.e($payloadUrl).'">', $html);
+        }
+
+        return $html;
+    }
+
+    /**
+     * A file's modified time as a cache-busting query, for pages that name
+     * their own scripts (the game editor's Blade view).
+     *
+     * The same reason as versionAssets below: these files are served bare, and
+     * a browser keeps a bare file for as long as it guesses it is still fresh.
+     * A teacher who used the editor yesterday would otherwise run yesterday's
+     * copy of it, bugs and all, for as long as the browser felt like.
+     */
+    public static function stamp(string $publicPath): string
+    {
+        $file = public_path($publicPath);
+
+        return is_file($file) ? '?v='.filemtime($file) : '';
     }
 
     /**
@@ -61,7 +96,7 @@ class RoomController extends Controller
      * front of a class. The shell itself is never cached, so a version on every
      * URL in it is enough to make each release load as one piece.
      */
-    private function versionAssets(string $html): string
+    private static function versionAssets(string $html): string
     {
         return preg_replace_callback(
             '#(src|href)="/game/([\w.-]+\.(?:js|css))"#',

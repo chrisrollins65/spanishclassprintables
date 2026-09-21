@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\InternalPinAssetController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\RoomController;
+use App\Http\Controllers\TeacherGameController;
 use App\Models\ContactMessage;
 use Illuminate\Support\Facades\Route;
 
@@ -50,3 +51,31 @@ Route::post('/api/internal/room', [RoomController::class, 'publish']);
 // own shared secret (see InternalPinAssetController).
 Route::post('/api/internal/pin-asset', [InternalPinAssetController::class, 'apiPostPinAsset'])
     ->middleware('throttle:60,1');
+
+/*
+ * Teacher accounts (docs/teacher-games.md). Fortify registers login, sign-up,
+ * reset and verification itself; these are the pages it leaves to us.
+ *
+ * Account settings need only a login, not a confirmed address: a teacher who
+ * typed their email wrong has to be able to reach the page that fixes it.
+ */
+Route::middleware('auth')->group(function () {
+    Route::view('/account', 'account.settings')->name('account');
+
+    Route::middleware('verified')->group(function () {
+        Route::get('/my-games', [TeacherGameController::class, 'index'])->name('my-games');
+
+        // A code that isn't found says so, which makes this a way to test
+        // codes — but no better a way than /j/{code}, which is open to anyone.
+        // The limit is for scripts, not for a teacher mistyping.
+        Route::post('/my-games/claim', [TeacherGameController::class, 'claim'])
+            ->middleware('throttle:10,1')
+            ->name('my-games.claim');
+
+        Route::get('/my-games/{game}/edit', [TeacherGameController::class, 'edit'])->name('my-games.edit');
+        Route::put('/my-games/{game}', [TeacherGameController::class, 'update'])->name('my-games.update');
+        Route::get('/my-games/{game}/play', [TeacherGameController::class, 'play'])->name('my-games.play');
+        Route::get('/my-games/{game}/payload.json', [TeacherGameController::class, 'payload'])->name('my-games.payload');
+        Route::delete('/my-games/{game}', [TeacherGameController::class, 'destroy'])->name('my-games.destroy');
+    });
+});

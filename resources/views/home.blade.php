@@ -234,6 +234,15 @@
       <a href="#play">Play a game</a>
       <a href="#review">Leave a review</a>
       <a href="#contact">Contact</a>
+      {{-- A teacher who has customized a game comes back here for it, so the
+           way in is in the header rather than buried in the page. --}}
+      {{-- Styled as a button so it survives the narrow-screen rule below, which
+           hides plain nav links: a teacher on a phone still needs the way in. --}}
+      @auth
+        <a class="btn btn-ghost" href="{{ route('my-games') }}">My games</a>
+      @else
+        <a class="btn btn-ghost" href="{{ route('login') }}">Log in</a>
+      @endauth
       <a class="btn btn-ghost" href="{{ config('site.store_url') }}" target="_blank" rel="noopener">Shop on TpT</a>
     </nav>
   </div>
