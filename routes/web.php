@@ -1,7 +1,10 @@
 <?php
 
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Api\InternalPinAssetController;
 use App\Http\Controllers\ContactController;
+use App\Http\Controllers\CreditsController;
+use App\Http\Controllers\PaddleWebhookController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\TeacherGameController;
 use App\Models\ContactMessage;
@@ -46,6 +49,26 @@ Route::get('/j/{code}', [RoomController::class, 'show'])
 
 Route::post('/api/internal/room', [RoomController::class, 'publish']);
 
+/*
+ * The shop's back office. One gate, on the whole group: nothing under /admin
+ * is reachable without it (config/site.php names who has it).
+ */
+Route::middleware(['auth', 'verified', 'can:admin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/', [AdminController::class, 'index'])->name('index');
+    Route::get('/teachers/{user}', [AdminController::class, 'teacher'])->name('teacher');
+    Route::post('/teachers/{user}/credits', [AdminController::class, 'credits'])->name('credits');
+    Route::post('/purchases/{entry}/refund', [AdminController::class, 'refund'])->name('refund');
+    Route::post('/games/{game}/lock', [AdminController::class, 'lock'])->name('lock');
+    Route::post('/games/{game}/unlock', [AdminController::class, 'unlock'])->name('unlock');
+});
+
+/*
+ * What Paddle tells us: a sale, a refund, a chargeback. Signed with its own
+ * secret and no session, like the other machine-to-machine endpoints here.
+ */
+Route::post('/api/paddle/webhook', PaddleWebhookController::class)
+    ->middleware('throttle:120,1');
+
 // Pin image drop-box: the TpT builder pushes rendered pin PNGs here so
 // Pinterest's bulk uploader has a public URL to fetch them from. Guarded by its
 // own shared secret (see InternalPinAssetController).
@@ -63,6 +86,9 @@ Route::middleware('auth')->group(function () {
     Route::view('/account', 'account.settings')->name('account');
 
     Route::middleware('verified')->group(function () {
+        Route::get('/credits', [CreditsController::class, 'show'])->name('credits');
+        Route::get('/credits/balance', [CreditsController::class, 'balance'])->name('credits.balance');
+
         Route::get('/my-games', [TeacherGameController::class, 'index'])->name('my-games');
 
         // A code that isn't found says so, which makes this a way to test
@@ -76,6 +102,16 @@ Route::middleware('auth')->group(function () {
         Route::put('/my-games/{game}', [TeacherGameController::class, 'update'])->name('my-games.update');
         Route::get('/my-games/{game}/play', [TeacherGameController::class, 'play'])->name('my-games.play');
         Route::get('/my-games/{game}/payload.json', [TeacherGameController::class, 'payload'])->name('my-games.payload');
+        // Rendering is a whole browser, so asking for cards is capped well
+        // below what one teacher could ever need.
+        Route::post('/my-games/{game}/cards', [TeacherGameController::class, 'cards'])
+            ->middleware('throttle:20,1')
+            ->name('my-games.cards');
+        Route::get('/my-games/{game}/cards/{size}/status', [TeacherGameController::class, 'cardsStatus'])
+            ->whereNumber('size')->name('my-games.cards.status');
+        Route::get('/my-games/{game}/cards/{size}.pdf', [TeacherGameController::class, 'cardsDownload'])
+            ->whereNumber('size')->name('my-games.cards.download');
+
         Route::delete('/my-games/{game}', [TeacherGameController::class, 'destroy'])->name('my-games.destroy');
     });
 });

@@ -106,6 +106,10 @@
     <nav class="nav" aria-label="Account">
       @auth
         <a href="{{ route('my-games') }}">My games</a>
+        <a href="{{ route('credits') }}">Credits</a>
+        @can('admin')
+          <a href="{{ route('admin.index') }}">Shop</a>
+        @endcan
         <a href="{{ route('account') }}">Account</a>
         <form method="post" action="{{ route('logout') }}">
           @csrf

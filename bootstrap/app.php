@@ -25,6 +25,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // Called by the local builder with a shared secret, not a browser
             // session, so there is no CSRF token to send.
             'api/internal/pin-asset',
+            // Paddle signs the body with its own secret; there is no session
+            // and so no token to present.
+            'api/paddle/webhook',
         ]);
 
         $middleware->web(append: [ThrottleAccountMail::class]);

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -29,7 +30,48 @@ class TeacherGame extends Model
         'jeopardy' => 'Team quiz',
     ];
 
-    protected $fillable = ['theme', 'games', 'source_code', 'payload'];
+    protected $fillable = ['theme', 'games', 'kind', 'source_code', 'payload', 'written_by'];
+
+    protected function casts(): array
+    {
+        return ['locked_at' => 'datetime', 'published_at' => 'datetime'];
+    }
+
+    /** @return HasOne<CreditUnit, $this> */
+    public function creditUnit(): HasOne
+    {
+        return $this->hasOne(CreditUnit::class, 'game_id');
+    }
+
+    /**
+     * A draft is not playable, not printable, and deletable to get the credit
+     * back; publishing is the moment a teacher gets what they paid for.
+     */
+    public function isPublished(): bool
+    {
+        return $this->published_at !== null;
+    }
+
+    /** A game a refund has taken back: kept, but not playable. */
+    public function isLocked(): bool
+    {
+        return $this->locked_at !== null;
+    }
+
+    /*
+     * forceFill, not update: locking is ours to do, never a teacher's, so the
+     * columns stay out of $fillable — and a non-fillable column handed to
+     * update() is dropped in silence, which is a lock that never happened.
+     */
+    public function lock(string $reason): void
+    {
+        $this->forceFill(['locked_at' => now(), 'locked_reason' => $reason])->save();
+    }
+
+    public function unlock(): void
+    {
+        $this->forceFill(['locked_at' => null, 'locked_reason' => null])->save();
+    }
 
     /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo

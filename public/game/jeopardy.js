@@ -209,6 +209,8 @@
     wrap.append(addBtn, el('div', 'award-row', null, [
       howToButton(root, () => howToSteps(null)), reviewButton(root, bankItems()), start,
     ]), moreGames());
+    const customize = window.RoomUI.customizeGame(room);
+    if (customize) wrap.append(customize);
     root.append(wrap);
   }
 

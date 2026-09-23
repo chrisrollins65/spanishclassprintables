@@ -152,6 +152,10 @@
   .fold[open] summary { border-bottom: 1px solid var(--edge); }
   .fold .words { padding: 0 clamp(18px, 3vw, 26px) clamp(18px, 3vw, 26px); }
 
+  .print-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .print-row .btn { font-size: .98rem; padding: .7em 1.2em; }
+  .print-row .btn:disabled { opacity: .7; cursor: progress; }
+
   .loading { color: var(--muted); }
 @endpush
 
@@ -167,6 +171,8 @@
        data-save-url="{{ route('my-games.update', $game) }}"
        data-play-url="{{ route('my-games.play', $game) }}"
        data-games-url="{{ route('my-games') }}"
+       data-cards-url="{{ route('my-games.cards', $game) }}"
+       data-cards-status-url="{{ route('my-games.cards.status', [$game, 'SIZE']) }}"
        data-game-id="{{ $game->id }}">
     <p class="loading">Loading your game…</p>
   </div>

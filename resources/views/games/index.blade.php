@@ -22,6 +22,7 @@
   .remove:hover { color: #B3261E; }
   @media (max-width: 560px) { .game { flex-direction: column; align-items: flex-start; } }
   .empty { color: var(--muted); }
+  .locked { color: #8A5A00; background: var(--gold-soft); border-radius: 10px; padding: 8px 12px; margin-top: 6px; font-size: .9rem; font-weight: 600; }
 @endpush
 
 @section('content')
@@ -37,7 +38,9 @@
     <form class="claim" method="post" action="{{ route('my-games.claim') }}">
       @csrf
       <label class="visually-hidden" for="code">Game code</label>
-      <input id="code" name="code" type="text" value="{{ old('code') }}" placeholder="CODE" maxlength="8"
+      {{-- Carried over from the game itself ("Change the words or questions"),
+           so a teacher arriving from a projector does not retype the code. --}}
+      <input id="code" name="code" type="text" value="{{ old('code', strtoupper((string) request('code'))) }}" placeholder="CODE" maxlength="8"
              autocomplete="off" autocapitalize="characters" spellcheck="false" required>
       <button class="btn btn-primary" type="submit">Add game</button>
     </form>
@@ -57,10 +60,17 @@
             <div>
               <h3>{{ $game->theme }}</h3>
               <p class="meta">{{ $game->gamesLabel() }} · changed {{ $game->updated_at->diffForHumans() }}</p>
+              {{-- A refunded purchase keeps the game but stops it playing, so
+                   say so here rather than letting the buttons fail. --}}
+              @if ($game->isLocked())
+                <p class="locked">Locked — this game's purchase was refunded. Buy a credit to use it again; your words and questions are still here.</p>
+              @endif
             </div>
             <div class="actions">
-              <a class="btn btn-ghost" href="{{ route('my-games.edit', $game) }}">Edit</a>
-              <a class="btn btn-primary" href="{{ route('my-games.play', $game) }}">Play ▸</a>
+              @unless ($game->isLocked())
+                <a class="btn btn-ghost" href="{{ route('my-games.edit', $game) }}">Edit</a>
+                <a class="btn btn-primary" href="{{ route('my-games.play', $game) }}">Play ▸</a>
+              @endunless
               <form method="post" action="{{ route('my-games.destroy', $game) }}"
                     onsubmit="return confirm({{ Js::from('Remove “'.$game->theme.'” from your games? Your changes to it will be lost.') }})">
                 @csrf

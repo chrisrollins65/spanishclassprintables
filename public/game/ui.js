@@ -861,6 +861,21 @@
     return link;
   }
 
+  /* The way to a teacher's own copy of this game, with the code carried over so
+   * the claim box on the other side is already filled in.
+   *
+   * Setup screens only, beside moreGames, and never on a teacher's own game —
+   * where it would point at itself. English, aimed over the class's heads at
+   * the teacher, like the line beside it. It says nothing about money: what a
+   * buyer of this pack gets for it is free.
+   */
+  function customizeGame(room) {
+    if (!room || !room.code || room.own) return null;
+    const link = el('a', 'more-games', 'Change the words or questions');
+    link.href = '/my-games?code=' + encodeURIComponent(room.code);
+    return link;
+  }
+
   /* Where a buyer leaves feedback: every purchase on one page, each with its own
    * Provide Feedback button, and the sign-in sends them straight back to it.
    *
@@ -907,7 +922,7 @@
     el, fitText, topBar,
     hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, englishToggle,
     displayFace, openVocab, reviewButton, openHowTo, howToButton,
-    brandMark, moreGames, afterGame, MORE_GAMES_URL,
+    brandMark, moreGames, customizeGame, afterGame, MORE_GAMES_URL,
     DEFAULT_RATE, RATES, normalizeRate, rateRow,
   };
 })();

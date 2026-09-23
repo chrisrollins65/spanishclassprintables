@@ -25,6 +25,8 @@
     save: root.dataset.saveUrl,
     play: root.dataset.playUrl,
     games: root.dataset.gamesUrl,
+    cards: root.dataset.cardsUrl,
+    cardsStatus: root.dataset.cardsStatusUrl,
   };
   const gameId = root.dataset.gameId;
 
@@ -602,13 +604,85 @@
     return values.length ? Math.min.apply(null, values) : null;
   }
 
-  /* What a bingo teacher has to know before they change a word: the cards in
-   * their download were printed with the old ones. */
+  /* What a bingo teacher has to know before they change a word — the cards in
+   * their download were printed with the old ones — and the way to get new
+   * ones on paper. */
   function bingoNote() {
     const card = el('div', 'card');
     card.append(el('h2', '', 'Bingo cards'));
-    card.append(el('p', 'lead', 'Change a word and the website builds new cards to match it, so the game you play online is always right. The cards in your TpT download still have the words they were printed with.'));
+    card.append(el('p', 'lead', 'Change a word and the website builds new cards to match it, so the game you play online is always right. The cards in your TpT download still have the words they were printed with — print a new set here when you need them on paper.'));
+
+    const sizes = [...new Set((game.games.bingo.cards || []).map(card => card.size))].sort((a, b) => b - a);
+    if (!sizes.length) return card;
+
+    const row = el('div', 'print-row');
+    sizes.forEach(size => row.append(printButton(size)));
+    card.append(row);
+    card.append(el('p', 'muted-note', 'Six cards to a sheet, with cut lines. Save your changes first — the cards are made from the words as they were saved.'));
+
     return card;
+  }
+
+  /* One size of card, on paper.
+   *
+   * The site renders it with a real browser, which takes a few seconds and
+   * runs one at a time for the whole site, so the button says what is
+   * happening and then goes to fetch the file rather than pretending to be
+   * instant. An unedited game that was printed before comes back at once: the
+   * file is named after the cards themselves.
+   */
+  function printButton(size) {
+    const button = el('button', 'btn btn-ghost', 'Print the ' + size + '×' + size + ' cards');
+    button.type = 'button';
+
+    const settle = (label, enabled) => {
+      button.textContent = label;
+      button.disabled = !enabled;
+    };
+
+    button.onclick = async () => {
+      settle('Making the ' + size + '×' + size + ' cards…', false);
+      try {
+        const res = await fetch(urls.cards, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': token() },
+          body: JSON.stringify({ size: size }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok && res.status !== 202) {
+          settle(body.message || 'That did not work — try again', true);
+          return;
+        }
+
+        const url = body.status === 'ready' ? body.url : await waitForCards(size);
+        if (!url) {
+          settle('That is taking too long — try again', true);
+          return;
+        }
+        window.location.href = url;
+        settle('Print the ' + size + '×' + size + ' cards', true);
+      } catch {
+        settle('We could not reach the site — try again', true);
+      }
+    };
+
+    return button;
+  }
+
+  /* Waits for the worker to finish. Polled rather than pushed: one file, one
+   * teacher, and a socket for this would be a lot of moving parts for a wait
+   * that is usually over before the third check. */
+  async function waitForCards(size) {
+    const url = urls.cardsStatus.replace('SIZE', String(size));
+    for (let attempt = 0; attempt < 40; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, attempt < 5 ? 700 : 1500));
+      const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+      if (!res.ok) return null;
+      const body = await res.json();
+      if (body.status === 'ready') return body.url;
+    }
+    return null;
   }
 
   /* ---------- checking ---------- */

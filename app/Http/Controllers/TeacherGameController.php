@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\RenderBingoCards;
 use App\Models\Room;
 use App\Models\TeacherGame;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -25,9 +28,12 @@ class TeacherGameController extends Controller
 
     public function index(Request $request): View
     {
-        // Without the payload: a bingo payload is ~60KB and the list shows none of it.
+        // Everything the list shows except the payload: a bingo payload is
+        // ~60KB and nothing here reads it. Anything a row displays has to be
+        // named, or it silently reads as empty — which is how a locked game
+        // first appeared on this page as a playable one.
         $games = $request->user()->teacherGames()
-            ->select(['id', 'user_id', 'theme', 'games', 'source_code', 'created_at', 'updated_at'])
+            ->select(['id', 'user_id', 'theme', 'games', 'source_code', 'locked_at', 'locked_reason', 'created_at', 'updated_at'])
             ->latest('updated_at')
             ->get();
 
@@ -82,7 +88,7 @@ class TeacherGameController extends Controller
 
     public function edit(Request $request, string $game): View
     {
-        return view('games.edit', ['game' => $this->owned($request, $game)]);
+        return view('games.edit', ['game' => $this->playable($request, $game)]);
     }
 
     /**
@@ -96,7 +102,7 @@ class TeacherGameController extends Controller
      */
     public function update(Request $request, string $game): JsonResponse
     {
-        $game = $this->owned($request, $game);
+        $game = $this->playable($request, $game);
 
         $request->validate([
             'payload' => ['required', 'array'],
@@ -141,7 +147,7 @@ class TeacherGameController extends Controller
 
     public function play(Request $request, string $game): Response
     {
-        $game = $this->owned($request, $game);
+        $game = $this->playable($request, $game);
 
         return response(RoomController::shell(route('my-games.payload', $game)))
             ->header('Content-Type', 'text/html; charset=UTF-8')
@@ -156,11 +162,86 @@ class TeacherGameController extends Controller
      */
     public function payload(Request $request, string $game): Response
     {
-        $game = $this->owned($request, $game);
+        $game = $this->playable($request, $game);
 
         return response($game->payload)
             ->header('Content-Type', 'application/json; charset=UTF-8')
             ->header('Cache-Control', 'private, no-store');
+    }
+
+    /**
+     * Ask for a set of bingo cards as a PDF.
+     *
+     * The file is named after what the cards were when it was made, so asking
+     * twice for an unedited game is a download rather than a second render,
+     * and an edit makes a new name rather than serving yesterday's words. The
+     * render itself is queued: it is a whole browser, and one worker runs.
+     */
+    public function cards(Request $request, string $game): JsonResponse
+    {
+        $game = $this->playable($request, $game);
+        $size = (int) $request->input('size');
+        $stamp = $this->cardsStamp($game, $size);
+
+        if ($stamp === null) {
+            return response()->json(['message' => 'This game has no cards that size.'], 422);
+        }
+
+        if (Storage::disk('local')->exists(RenderBingoCards::pathFor($game->id, $size, $stamp))) {
+            return response()->json(['status' => 'ready', 'url' => route('my-games.cards.download', [$game, $size])]);
+        }
+
+        RenderBingoCards::dispatch($game->id, $size, $stamp);
+
+        return response()->json(['status' => 'working'], 202);
+    }
+
+    /** Whether the cards asked for have finished rendering. */
+    public function cardsStatus(Request $request, string $game, int $size): JsonResponse
+    {
+        $game = $this->playable($request, $game);
+        $stamp = $this->cardsStamp($game, $size);
+
+        $ready = $stamp !== null && Storage::disk('local')->exists(RenderBingoCards::pathFor($game->id, $size, $stamp));
+
+        return response()->json([
+            'status' => $ready ? 'ready' : 'working',
+            'url' => $ready ? route('my-games.cards.download', [$game, $size]) : null,
+        ]);
+    }
+
+    public function cardsDownload(Request $request, string $game, int $size): Response
+    {
+        $game = $this->playable($request, $game);
+        $stamp = $this->cardsStamp($game, $size);
+        abort_if($stamp === null, 404);
+
+        $path = RenderBingoCards::pathFor($game->id, $size, $stamp);
+        abort_unless(Storage::disk('local')->exists($path), 404);
+
+        $name = Str::slug($game->theme ?: 'bingo')."-cards-{$size}x{$size}.pdf";
+
+        return Storage::disk('local')->download($path, $name);
+    }
+
+    /**
+     * A fingerprint of the cards of one size: what they are, not when they
+     * were made. Two teachers' games, or one game before and after an edit,
+     * can never share a file.
+     */
+    private function cardsStamp(TeacherGame $game, int $size): ?string
+    {
+        $payload = json_decode($game->payload, true) ?: [];
+        $cards = array_values(array_filter(
+            $payload['games']['bingo']['cards'] ?? [],
+            fn (array $card): bool => (int) ($card['size'] ?? 0) === $size,
+        ));
+
+        if ($cards === []) {
+            return null;
+        }
+
+        return substr(sha1(json_encode([$game->theme, $cards])), 0, 16);
     }
 
     public function destroy(Request $request, string $game): RedirectResponse
@@ -175,5 +256,21 @@ class TeacherGameController extends Controller
     private function owned(Request $request, string $id): TeacherGame
     {
         return $request->user()->teacherGames()->findOrFail($id);
+    }
+
+    /**
+     * The game, and only if it still belongs to the teacher in the sense that
+     * matters: a refunded purchase locks what it paid for.
+     *
+     * 403 rather than 404 — the game is theirs and they can see it on the
+     * list, so pretending it does not exist would be a lie they can check.
+     */
+    private function playable(Request $request, string $id): TeacherGame
+    {
+        $game = $this->owned($request, $id);
+
+        abort_if($game->isLocked(), 403, 'This game is locked because its purchase was refunded.');
+
+        return $game;
     }
 }

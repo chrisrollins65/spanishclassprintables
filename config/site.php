@@ -19,6 +19,19 @@ return [
     'demo_room_code' => env('DEMO_ROOM_CODE', ''),
 
     /*
+     * Who can reach the admin screens, by email address.
+     *
+     * A list here rather than a column on users: nothing a teacher can do to
+     * their own row can make them an admin, and taking the rights away is an
+     * edit to this environment's .env rather than a database write someone has
+     * to remember to make.
+     */
+    'admins' => array_values(array_filter(array_map(
+        fn (string $email): string => strtolower(trim($email)),
+        explode(',', (string) env('ADMIN_EMAILS', '')),
+    ))),
+
+    /*
      * Rooms nobody may copy into their own account (TeacherGameController).
      * The demo games are free to everyone, so a private, editable copy of one
      * would be a free game once games are sold here.

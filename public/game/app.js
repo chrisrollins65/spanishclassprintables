@@ -65,6 +65,9 @@
     } catch {
       return renderMessage('No pudimos abrir este juego. Revisa la conexión a internet y vuelve a tus juegos.', '/my-games', 'Mis juegos');
     }
+    // So the setup screen does not offer to customize a game that already is
+    // the teacher's own customized copy.
+    room.own = true;
     mountRoom(room);
   }
 

@@ -46,9 +46,8 @@ TpT listings can advertise the day it ships.
 3. Edits it in the browser: the word bank (face, article, English, gap sentence,
    definition) and, for the quiz, the board and the final wager.
 4. Plays it from **My games**.
-5. For bingo only: presses **Make new cards** and downloads a PDF of cards for
-   the edited words. (Not built yet — the website's own cards already follow an
-   edit; this is the printable.)
+5. For bingo only: presses **Print the 4×4 cards** and downloads a PDF of
+   cards for the edited words.
 
 ### Decided
 
@@ -76,9 +75,13 @@ TpT listings can advertise the day it ships.
   other sites: renders go through a queue with **one worker** so two can never
   run at once, and the droplet gets a swap file as a safety margin. Check
   `free -m` first.
-- **"Create your own game" link** sits beside the existing `moreGames()` link
-  (`ui.js`) and on the demo room. In Phase 1 it goes to a "coming soon / get
-  notified" page. Not built yet.
+- **"Change the words or questions"** sits beside the existing `moreGames()`
+  link on both setup screens (`customizeGame` in `ui.js`), carrying the room
+  code so the claim box on the other side is already filled in. Never on a
+  teacher's own game, where it would point at itself: the shell marks those
+  with `room.own`. It says nothing about money — what a buyer of that pack gets
+  is free. The **"Create your own game"** link is a Phase 2 thing and goes up
+  with the sales page.
 - **Auth is Laravel Fortify.** Accounts will hold paid credits, so the auth back
   end is the maintained, widely reviewed one — login throttling, session
   regeneration, reset and verification tokens — rather than our own copy of it.
@@ -156,14 +159,44 @@ size only (valid JSON, expected keys, `MAX_PAYLOAD_BYTES`) — a malformed paylo
 can only break the owner's own game, so a second PHP copy of every writing rule
 is not worth its drift.
 
-### Things to update when Phase 1 ships
+### Things to update when Phase 1 ships — done
 
 In the builder, which has one rule: change the site, change these —
 
-- `GAME_LISTING_FACTS`: the games are customizable once you make a free account.
-- The How to Play pages (`*ComoJugar.html`) and the site's ❓ panel.
+- `GAME_LISTING_FACTS`: both kinds now carry a fact saying the questions are
+  the teacher's to change with a free account, and that the printed pages stay
+  as they are (bingo's adds that new cards can be printed).
+- The How to Play pages (`*ComoJugar.html`) carry it as a tip, in both kinds.
+- **Not** the site's ❓ panel, which is the rules read out to the class in
+  Spanish — customizing is a teacher's business, like the score-overwrite
+  control before it.
 - TpT listings already live get the line on their next manual rewrite; the
   builder never rewrites a listing on its own.
+
+### Printable cards — done
+
+- **The PDF is rendered by Browsershot** from `resources/views/games/cards.blade.php`,
+  which is laid out like the builder's own card sheets (`renderCardSet` and
+  `cardStyles` in `gamePack.js`): six to a sheet, two across and three down,
+  each bounded by the dashed line it is cut along. Two columns rather than
+  three keeps the cell *width*, which is the dimension a long word needs. A
+  48-card set renders in about six seconds locally.
+- **No room code on a card, ever.** A card is photocopied, cut up and taken
+  home; the site's address is worth printing on it and the code never is
+  (`CARRIES_THE_CODE` in the builder says the same). A test asserts it.
+- **The file is named after the cards themselves** — a short hash of the theme
+  and the cards. Asking twice for an unedited game is a download rather than a
+  second render, and an edit makes a new name rather than serving yesterday's
+  words. Nothing has to be invalidated by hand.
+- **Rendering is queued** onto the one worker, and the browser polls for the
+  file. A whole Chrome for every teacher who presses print is exactly what the
+  2GB droplet cannot take twice at once.
+- **Chrome comes from Google's apt repository** (see the server repo's
+  `server.yml`), not Ubuntu's chromium, which is a snap and will not run
+  headless from a service. `puppeteer` is in the site's `package.json` because
+  Browsershot's runner requires it, with `PUPPETEER_SKIP_DOWNLOAD` in `.npmrc`
+  so no second copy of Chromium is downloaded on deploy;
+  `BROWSERSHOT_CHROME_PATH` in the production `.env` names Chrome's path.
 
 ### The editor — done
 
@@ -276,11 +309,30 @@ In the builder, which has one rule: change the site, change these —
 
 ### Decided
 
-- **Payments: Paddle**, as merchant of record. It is the legal seller, handles
-  sales tax and VAT everywhere, and issues the buyer's invoice; we invoice
-  Paddle once a month. Chosen over Creem, which is cheaper per sale but charges
-  at least €7 per payout, twice a month — more than it saves at our volume.
-  **Laravel Cashier (Paddle)** is the official integration.
+- **Payments: Paddle**, as merchant of record, from the start. Stripe is
+  cheaper per sale and already runs in the other apps here, but at this volume
+  that is about **$0.20 a sale — $20 a year at 100 sales**, and what it buys
+  back is the part that actually costs time:
+  - Spain's filings are aggregate (modelo 130, modelo 303), but the books
+    behind them are **per sale**: a *libro registro de facturas emitidas* with
+    one numbered invoice per sale. As merchant of record Paddle is the seller
+    to the teacher, so we issue **one invoice a month to Paddle** — twelve
+    entries a year, one customer, one country.
+  - Every non-US buyer otherwise raises a VAT question of its own (EU from the
+    first sale, UK from the first sale). Paddle answers all of them.
+  - **Verifactu** reaches autónomos in 2027. Software issuing our own invoices
+    to consumers would have to comply; twelve invoices a month to one company
+    do not have that problem.
+  - Revisit only if the fee difference becomes real money — around $1–2k a
+    month — and the bookkeeping is by then worth paying someone to do.
+  - **Hand-rolled, not Laravel Cashier.** Cashier is built around
+    subscriptions — billables, plans, swaps, grace periods — and a credit pack
+    is a one-off charge, so nearly all of it would sit unused while still being
+    a dependency to keep current. What we actually need Cashier does not do
+    anyway: a credit ledger, and a refund that takes credits back and locks
+    what they paid for. What it would have given us is a signed-webhook check
+    (about twenty lines here) and a checkout helper (Paddle.js with a price
+    id). Revisit only if subscriptions ever appear.
 - **Payouts in EUR by SEPA to the CaixaBank account.** Free from Paddle; Paddle
   may add up to 1.5% converting USD to EUR. A USD payout to a European bank
   goes by SWIFT for a flat $15, so it is never cheaper at our volume.
@@ -306,12 +358,113 @@ In the builder, which has one rule: change the site, change these —
   process per call (no resident service on the droplet). A PHP rewrite of
   1,400 lines of prompts would drift the first week.
 
+### How money becomes credits — built
+
+- **`credit_entries` is a ledger**, one row per movement, never edited or
+  deleted: `purchase`, `spend`, `refund`, `admin`. The balance is the sum of
+  the rows, so it cannot disagree with the history. A unique index on
+  (reason, reference) is what makes a webhook delivered twice credit once —
+  Paddle retries anything it does not hear back from.
+- **The webhook is the only way money reaches the site** (`PaddleWebhookController`),
+  whoever started it: a refund pressed in Paddle's dashboard and one started
+  from our own admin screens both arrive here, so an account ends in the same
+  state either way. The signature is checked against the raw body with
+  `hash_equals`, and its timestamp must be recent — a signature is otherwise
+  valid forever and a captured body could be replayed.
+- **What a price is worth is decided here** (`config/paddle.php`), not read
+  from the transaction, so a price edited in Paddle's dashboard cannot quietly
+  change what a teacher receives.
+- **A refund takes the credits back and locks what they paid for**, newest
+  first — a teacher who bought ten and refunded one keeps the nine they have
+  been using. A game claimed from a TpT pack was never paid for here
+  (`paid_with` is null) and a refund never touches it.
+- **Locked, never deleted.** Refunds get reversed, cards get half printed, and
+  a teacher who pays again should find their own writing where they left it. A
+  locked game stays on the list saying why, refuses to play, edit, save or
+  print, and can still be removed by its owner.
+- **Only an approved refund acts.** One Paddle is still reviewing has taken
+  nothing from anybody, and locking a game mid-lesson over a decision that may
+  not be made is the wrong way round.
+
+### The back office — built
+
+- **`/admin`, gated by `can:admin`** on the whole group. Who has it is a list
+  of email addresses in `config/site.php` (from `ADMIN_EMAILS`), not a column:
+  nothing a teacher can write to their own row can promote them, and taking the
+  rights away is an environment change rather than a database write somebody
+  has to remember.
+- **A teacher's page** shows the ledger, every game (including ones they have
+  removed), and the balance.
+- **Credits can be given or taken by hand**, with a reason that is required and
+  recorded — an apology, a test account, a sale whose webhook never arrived.
+  Never for undoing a purchase: that owes money back, which is a refund.
+- **A refund asks Paddle and waits for its word.** The admin screen calls
+  Paddle's API; Paddle decides (a refund can sit in review) and tells us
+  through the webhook, which is where credits come off and games get locked.
+  Nothing writes a refund straight into the ledger, or the money and the
+  account could disagree.
+- **Locking and unlocking a game by hand** for the cases a refund does not
+  cover: a chargeback, a mistake, a teacher who paid again.
+
+### When a webhook is missed
+
+- **`php artisan paddle:sync` reads Paddle and puts right whatever the webhook
+  did not deliver** — a machine asleep, a deploy mid-delivery, a tunnel that
+  was not running, a retry budget that ran out (Paddle gives up after ~3 days,
+  and after 3 attempts in sandbox). It grants missing purchases and takes back
+  missing refunds.
+- **It is safe to run at any time**, and the scheduler runs it hourly. Every
+  row it writes is keyed by the Paddle id that caused it and guarded by the
+  ledger's unique index, so an hour in which nothing was missed does nothing at
+  all. `--pretend` reports without writing; `--days=90` reaches as far back as
+  Paddle keeps notifications.
+- **This is why the ledger is shaped the way it is.** Credits are not a number
+  on the user; they are rows keyed by what caused them, which is what makes
+  Paddle the source of truth and this site a copy that can always be rebuilt
+  from it. A balance column could only ever be *corrected*, never *derived*.
+- **A sale with no `custom_data.user_id` is reported, not guessed at** — it is
+  usually a test made in Paddle's own dashboard, and attaching it to a teacher
+  would be inventing a fact.
+
+### Setting Paddle up
+
+Two settings in the dashboard have nothing to do with our code and stop the
+checkout dead if they are missed. Both are per environment, so **production
+needs them again**:
+
+- **A default payment link** (Paddle → Checkout → Checkout settings). Without
+  it, `Paddle.Checkout.open()` fails with "Something went wrong" and a 405 from
+  `…/transaction-checkout` — an error that says nothing about the cause. This
+  is what fixed it in sandbox: the checkout-domains API lists nothing even now,
+  so the domain approval below changed nothing there.
+- **Domain approval** (Paddle → Checkout → Website approval). Sandbox approves
+  automatically and appears not to record domains at all. **Production will
+  not**: `spanishclassprintables.com` has to be approved before a real teacher
+  can buy anything.
+
+Worth knowing: `Paddle.PricePreview()` keeps working when both of these are
+wrong, so a pricing page that looks right proves nothing about the checkout.
+
+- **The catalog is one product with two one-off prices** — "1 game" and
+  "10 games" — under the tax category **saas**: a credit buys the use of an
+  online tool, not an ebook, and the category decides the rate of tax Paddle
+  charges. Their ids, the client token and the webhook secret live in each
+  environment's `.env` (`.env.example` lists them); nothing but
+  `config/paddle.php` reads them.
+- **Sandbox and production are separate accounts** with their own keys, prices
+  and webhook secret, so the ids differ per environment and none of them belong
+  in the repo.
+- **Webhooks cannot reach a `.test` domain**, so testing the whole loop locally
+  needs a tunnel (ngrok or cloudflared) as the notification destination.
+  Sandbox refunds approve themselves about ten minutes after they are asked
+  for, which is the wait before a locked game proves the refund path works.
+
 ### Also needed
 
 - Legal pages: terms, privacy policy, refund policy, a public pricing page —
   Paddle's review checks the live site for them, so they go up before applying.
-- Credit ledger table (purchases and spends, never a bare balance column), fed
-  by Paddle webhooks.
+- The checkout itself (Paddle.js over our own page), the sales page, and
+  spending a credit to create a game.
 - A model choice for the site's generation: cost per game, not only quality.
 
 ### Open questions (business, not code)

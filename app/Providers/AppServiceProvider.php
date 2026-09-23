@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -28,6 +30,8 @@ class AppServiceProvider extends ServiceProvider
          * which looks like being logged out.
          */
         RedirectIfAuthenticated::redirectUsing(fn (): string => route('my-games'));
+
+        Gate::define('admin', fn (User $user): bool => $user->isAdmin());
 
         /*
          * Length over composition rules: a long password a teacher can

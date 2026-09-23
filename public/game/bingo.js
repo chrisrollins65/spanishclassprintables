@@ -239,6 +239,8 @@
         // Reads `pattern` when it opens, so the rule shown is the one just picked.
         howToButton(root, () => howToSteps(pattern)), reviewButton(root, game.items), start,
       ]), moreGames());
+    const customize = window.RoomUI.customizeGame(room);
+    if (customize) wrap.append(customize);
     root.append(wrap);
   }
 

@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RenderBingoCards;
 use App\Models\Room;
 use App\Models\TeacherGame;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -59,6 +62,14 @@ class TeacherGameTest extends TestCase
         $this->assertSame('Bingo and team quiz', $game->gamesLabel());
 
         $this->actingAs($game->user)->get('/my-games')->assertSee('Bingo and team quiz');
+    }
+
+    public function test_a_code_carried_from_the_game_fills_the_box_in(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->get('/my-games?code=abc123')
+            ->assertOk()
+            ->assertSee('value="ABC123"', false);
     }
 
     public function test_claiming_never_changes_the_room(): void
@@ -289,6 +300,118 @@ class TeacherGameTest extends TestCase
             ->assertNotFound();
 
         $this->assertSame('Los Deportes', $game->fresh()->theme);
+    }
+
+    /** A bingo game with two card sets, as the builder publishes one. */
+    private function bingoGame(): TeacherGame
+    {
+        return TeacherGame::factory()->create([
+            'games' => 'bingo',
+            'payload' => json_encode([
+                'theme' => 'Los Deportes',
+                'games' => ['bingo' => ['title' => 'Los Deportes', 'cards' => [
+                    ['id' => 1, 'size' => 4, 'grid' => [['a', 'b', 'c', 'd']]],
+                    ['id' => 2, 'size' => 3, 'grid' => [['a', 'b', 'c']]],
+                ]]],
+            ]),
+        ]);
+    }
+
+    public function test_asking_for_cards_queues_one_render(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $game = $this->bingoGame();
+
+        $this->actingAs($game->user)
+            ->postJson("/my-games/{$game->id}/cards", ['size' => 4])
+            ->assertStatus(202)
+            ->assertJsonPath('status', 'working');
+
+        Queue::assertPushed(RenderBingoCards::class, fn (RenderBingoCards $job): bool => $job->gameId === $game->id && $job->size === 4);
+    }
+
+    public function test_cards_already_rendered_are_not_rendered_again(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $game = $this->bingoGame();
+
+        // Whatever the controller would have asked the worker to make.
+        $this->actingAs($game->user)->postJson("/my-games/{$game->id}/cards", ['size' => 4]);
+        $job = Queue::pushed(RenderBingoCards::class)->first();
+        Storage::disk('local')->put(RenderBingoCards::pathFor($game->id, 4, $job->stamp), 'pretend pdf');
+
+        $this->actingAs($game->user)
+            ->postJson("/my-games/{$game->id}/cards", ['size' => 4])
+            ->assertOk()
+            ->assertJsonPath('status', 'ready');
+
+        $this->actingAs($game->user)
+            ->get("/my-games/{$game->id}/cards/4.pdf")
+            ->assertOk()
+            ->assertDownload('los-deportes-cards-4x4.pdf');
+    }
+
+    public function test_editing_a_word_means_new_cards_rather_than_yesterdays(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $game = $this->bingoGame();
+
+        $this->actingAs($game->user)->postJson("/my-games/{$game->id}/cards", ['size' => 4]);
+        $before = Queue::pushed(RenderBingoCards::class)->first()->stamp;
+        Storage::disk('local')->put(RenderBingoCards::pathFor($game->id, 4, $before), 'pretend pdf');
+
+        // The editor rebuilds the cards whenever a word changes; here that is
+        // simply a different card.
+        $payload = json_decode($game->payload, true);
+        $payload['games']['bingo']['cards'][0]['grid'] = [['x', 'y', 'z', 'w']];
+        $this->actingAs($game->user)->putJson("/my-games/{$game->id}", ['payload' => $payload])->assertOk();
+
+        $this->actingAs($game->user)
+            ->postJson("/my-games/{$game->id}/cards", ['size' => 4])
+            ->assertStatus(202);
+
+        $this->actingAs($game->user)->get("/my-games/{$game->id}/cards/4.pdf")->assertNotFound();
+    }
+
+    public function test_a_size_the_game_does_not_have_is_refused(): void
+    {
+        Queue::fake();
+        $game = $this->bingoGame();
+
+        $this->actingAs($game->user)
+            ->postJson("/my-games/{$game->id}/cards", ['size' => 5])
+            ->assertStatus(422);
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_only_the_owner_can_ask_for_or_download_cards(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $game = $this->bingoGame();
+        $stranger = User::factory()->create();
+
+        $this->actingAs($stranger)->postJson("/my-games/{$game->id}/cards", ['size' => 4])->assertNotFound();
+        $this->actingAs($stranger)->get("/my-games/{$game->id}/cards/4/status")->assertNotFound();
+        $this->actingAs($stranger)->get("/my-games/{$game->id}/cards/4.pdf")->assertNotFound();
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_the_card_page_prints_the_site_but_never_a_code(): void
+    {
+        $game = $this->bingoGame();
+        $data = RenderBingoCards::pageData($game->fresh(), 4);
+        $html = view('games.cards', $data)->render();
+
+        $this->assertStringContainsString($data['siteHome'], $html);
+        // A card is cut up and taken home; the code opens every answer.
+        $this->assertStringNotContainsString($game->id, $html);
+        $this->assertStringNotContainsString('/j/', $html);
     }
 
     public function test_room_pages_still_serve_the_shell_without_a_payload_url(): void
