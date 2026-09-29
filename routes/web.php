@@ -91,6 +91,22 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/my-games', [TeacherGameController::class, 'index'])->name('my-games');
 
+        // Making a game: choosing what it is, then writing it — by hand, or by
+        // asking a model. The credit goes at `store`, before anything is
+        // written, so every model call has one behind it.
+        Route::get('/my-games/new', [TeacherGameController::class, 'create'])->name('my-games.create');
+        Route::post('/my-games', [TeacherGameController::class, 'store'])
+            ->middleware('throttle:30,1')->name('my-games.store');
+        Route::post('/my-games/{game}/write', [TeacherGameController::class, 'write'])
+            ->middleware('throttle:20,1')->name('my-games.write');
+        Route::get('/my-games/{game}/writing', [TeacherGameController::class, 'writingStatus'])->name('my-games.writing');
+        // Tuning a game that already exists — the smaller, repeated half of
+        // writing one, and what the per-credit AI budget is really for.
+        Route::post('/my-games/{game}/ask', [TeacherGameController::class, 'ask'])
+            ->middleware('throttle:20,1')->name('my-games.ask');
+        Route::get('/my-games/{game}/asking', [TeacherGameController::class, 'askingStatus'])->name('my-games.asking');
+        Route::post('/my-games/{game}/publish', [TeacherGameController::class, 'publish'])->name('my-games.publish');
+
         // A code that isn't found says so, which makes this a way to test
         // codes — but no better a way than /j/{code}, which is open to anyone.
         // The limit is for scripts, not for a teacher mistyping.
@@ -111,6 +127,14 @@ Route::middleware('auth')->group(function () {
             ->whereNumber('size')->name('my-games.cards.status');
         Route::get('/my-games/{game}/cards/{size}.pdf', [TeacherGameController::class, 'cardsDownload'])
             ->whereNumber('size')->name('my-games.cards.download');
+
+        // The quiz's equivalent of the cards: the page each team writes on.
+        Route::post('/my-games/{game}/answer-sheet', [TeacherGameController::class, 'answerSheet'])
+            ->middleware('throttle:20,1')->name('my-games.answer-sheet');
+        Route::get('/my-games/{game}/answer-sheet/status', [TeacherGameController::class, 'answerSheetStatus'])
+            ->name('my-games.answer-sheet.status');
+        Route::get('/my-games/{game}/answer-sheet.pdf', [TeacherGameController::class, 'answerSheetDownload'])
+            ->name('my-games.answer-sheet.download');
 
         Route::delete('/my-games/{game}', [TeacherGameController::class, 'destroy'])->name('my-games.destroy');
     });

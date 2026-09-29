@@ -3,11 +3,11 @@
 namespace App\Jobs;
 
 use App\Models\TeacherGame;
+use App\Support\PrintablePdf;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
-use Spatie\Browsershot\Browsershot;
 
 /**
  * Renders one set of a teacher's bingo cards to a PDF.
@@ -46,28 +46,7 @@ class RenderBingoCards implements ShouldQueue
 
         $html = View::make('games.cards', self::pageData($game, $this->size))->render();
 
-        $pdf = Browsershot::html($html)
-            ->format('Letter')
-            ->margins(0, 0, 0, 0)
-            ->showBackground()
-            ->timeout(90);
-
-        if ($chrome = config('browsershot.chrome_path')) {
-            $pdf->setChromePath($chrome);
-        }
-        if ($node = config('browsershot.node_binary')) {
-            $pdf->setNodeBinary($node);
-        }
-        if ($npm = config('browsershot.npm_binary')) {
-            $pdf->setNpmBinary($npm);
-        }
-        if (config('browsershot.no_sandbox')) {
-            // The droplet runs this as the web user, not root, but Chrome's
-            // sandbox still needs kernel namespaces a small VPS may not grant.
-            $pdf->noSandbox();
-        }
-
-        Storage::disk('local')->put($path, $pdf->pdf());
+        Storage::disk('local')->put($path, PrintablePdf::render($html));
     }
 
     /**

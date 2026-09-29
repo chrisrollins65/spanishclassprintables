@@ -68,6 +68,9 @@
     // So the setup screen does not offer to customize a game that already is
     // the teacher's own customized copy.
     room.own = true;
+    // Made here with a credit rather than bought on TpT, which is the one
+    // thing the end-of-game screen needs to know: see afterGame.
+    room.madeHere = app.dataset.madeHere === '1';
     mountRoom(room);
   }
 

@@ -151,6 +151,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
             $unit->delete();
         }
+
+        // On the purchase itself, so paddle:sync can tell "these credits were
+        // never created" from "these credits were taken away".
+        $purchase->forceFill(['refunded_at' => now()])->save();
     }
 
     /** Admin rights come from config/site.php, never from this row. */

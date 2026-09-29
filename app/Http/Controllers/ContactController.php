@@ -7,6 +7,7 @@ use App\Models\ContactMessage;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -116,6 +117,27 @@ class ContactController extends Controller
         $fields = $validator->validated();
         $spamReason ??= $this->suspicion($fields, $startedAt);
 
+        /* One press, one message.
+         *
+         * A double-tap sent it twice — two rows and two emails. The button
+         * disables itself (public/site/once.js), but that is gone on a refresh
+         * onto the POST, in a second tab, or before the script has loaded, and
+         * both halves of a phone's double-tap fire at once.
+         *
+         * The `started` token is already a nonce: one per rendering of the
+         * form, and a fresh one after a successful send. Claiming it here —
+         * after validation, so a teacher fixing an error and resending is not
+         * mistaken for a repeat — makes the second press a no-op behind the
+         * same thank-you.
+         *
+         * Cache::add is atomic on the file and database stores, which is what
+         * makes this hold against two simultaneous presses; a has()-then-put()
+         * would let both through. See .ai/rules/repeated-presses.md.
+         */
+        if (! Cache::add($this->pressKey($request), true, now()->addHours(2))) {
+            return $thanks;
+        }
+
         $message = ContactMessage::create($fields + ['spam_reason' => $spamReason]);
 
         // Held messages stay in the table for a look, but never reach the inbox.
@@ -135,6 +157,19 @@ class ContactController extends Controller
         }
 
         return $thanks;
+    }
+
+    /**
+     * What identifies this press, for the one-message-per-press check.
+     *
+     * The encrypted start token rather than the message text: a teacher who
+     * genuinely writes twice gets a freshly rendered form and a new token, so
+     * only the same rendering posting twice collides. Hashed because a cache
+     * key should not be a ciphertext of ours, and length-bounded.
+     */
+    private function pressKey(Request $request): string
+    {
+        return 'contact-press:'.hash('sha256', (string) $request->input('started'));
     }
 
     private function startedAt(mixed $token): ?int

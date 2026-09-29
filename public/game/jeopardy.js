@@ -211,6 +211,8 @@
     ]), moreGames());
     const customize = window.RoomUI.customizeGame(room);
     if (customize) wrap.append(customize);
+    const back = window.RoomUI.backToMyGames(room);
+    if (back) wrap.append(back);
     root.append(wrap);
   }
 

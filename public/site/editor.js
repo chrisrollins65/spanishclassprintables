@@ -21,6 +21,13 @@
   if (!root) return;
 
   const urls = {
+    write: root.dataset.writeUrl,
+    writing: root.dataset.writingUrl,
+    ask: root.dataset.askUrl,
+    answerSheet: root.dataset.answerSheetUrl,
+    answerSheetStatus: root.dataset.answerSheetStatusUrl,
+    asking: root.dataset.askingUrl,
+    publish: root.dataset.publishUrl,
     payload: root.dataset.payloadUrl,
     save: root.dataset.saveUrl,
     play: root.dataset.playUrl,
@@ -29,12 +36,40 @@
     cardsStatus: root.dataset.cardsStatusUrl,
   };
   const gameId = root.dataset.gameId;
+  const isDraft = root.dataset.draft === '1';
 
   let game = null;          // the payload being edited
   let originalFaces = '';   // the bank as it was loaded, to spot word changes
   let dirty = false;
   let saving = false;
   let checkTimer = null;
+
+  /* What the last Ask AI rewrote, so the teacher can find it.
+   *
+   * By position, rebuilt on every reply: the whole card is re-rendered from
+   * the payload each time, so there are no objects to hang a WeakSet off the
+   * way the builder does. An edit nobody can find is an edit nobody reviews.
+   */
+  let aiChanged = { items: [], clues: [], names: [], final: false };
+
+  /* How much of this credit's AI is gone, or null while it does not matter.
+   * Comes with the page so a teacher returning to a spent credit meets a
+   * closed box, not an open one that takes their request and refuses it. */
+  let aiPercent = root.dataset.aiPercent === '' ? null : Number(root.dataset.aiPercent);
+
+  /* Whether this game's cards are worth putting on paper — see the comment
+   * where the section is built. Set again after an edit, because an edit is
+   * exactly what makes a claimed pack's printed set out of date. */
+  let cardsWorthPrinting = root.dataset.cardsWorthPrinting === '1';
+
+  /* The quiz's team answer sheet, offered only for a game made here — a
+   * claimed pack came with one. See TeacherGame::answerSheetIsAvailable. */
+  const answerSheetAvailable = root.dataset.answerSheet === '1';
+
+  /* Whether the first word has been shown open yet — see wordsCard. Once per
+   * page, not once per render, or a teacher who closes it would have it
+   * spring back open the next time anything redraws. */
+  let shownWhatAWordHolds = false;
 
   const state = el('span', 'state');
 
@@ -55,6 +90,323 @@
     game = loaded;
     originalFaces = faceList();
     render();
+
+    // A model may still be writing this one; the page waits rather than
+    // showing a teacher an empty game and letting them wonder.
+    if (root.dataset.writing === 'working') watchWriting();
+
+    // Likewise an Ask AI change left running when the tab was closed.
+    if (root.dataset.asking === 'working') watchAsking();
+  }
+
+  /* Waiting for a model.
+   *
+   * Polled rather than pushed: one teacher, one game, a wait measured in
+   * tens of seconds — a socket would be a lot of machinery for that.
+   */
+  function watchWriting() {
+    renderWaiting();
+    let tries = 0;
+
+    (function check() {
+      if (tries++ > 120) return;
+      setTimeout(function () {
+        fetch(urls.writing, { credentials: 'same-origin', cache: 'no-store' })
+          .then(res => res.json())
+          .then(body => {
+            if (body.status === 'ready') return location.reload();
+            if (body.status === 'failed') return renderWritingFailed(body.message);
+            check();
+          })
+          .catch(check);
+      }, tries < 10 ? 1500 : 3000);
+    })();
+  }
+
+  function renderWaiting() {
+    const waiting = el('div', 'writing');
+    waiting.append(el('span', 'spinner'), el('p', '', 'Writing your game… this takes about a minute. You can leave this page and come back.'));
+    root.insertBefore(waiting, root.children[1] || null);
+  }
+
+  function renderWritingFailed(message) {
+    const failed = document.querySelector('.writing');
+    if (!failed) return;
+    failed.innerHTML = '';
+    failed.className = 'checks problems';
+    failed.append(el('p', '', message || 'We could not write this one.'));
+
+    const again = el('button', 'btn btn-ghost', 'Try again');
+    again.type = 'button';
+    again.style.marginTop = '10px';
+    again.onclick = () => askAi(again);
+    failed.append(again);
+  }
+
+  /* Ask a model to write this draft — a second go after a failure, or the
+   * first for a teacher who started by hand and changed their mind. */
+  async function askAi(button) {
+    button.disabled = true;
+    try {
+      const res = await fetch(urls.write, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'X-CSRF-TOKEN': token() },
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok && res.status !== 202) {
+        button.disabled = false;
+        return renderWritingFailed(body.message);
+      }
+
+      const existing = document.querySelector('.writing');
+      if (existing) existing.remove();
+      watchWriting();
+    } catch {
+      button.disabled = false;
+      renderWritingFailed('We could not reach the site. Please try again.');
+    }
+  }
+
+  /* ---------- Ask AI ---------- */
+
+  /* A box, not a chat.
+   *
+   * Every request carries the game exactly as it stands — the bank numbered,
+   * or the board category by category — so the model always sees what is on
+   * the teacher's screen, hand edits included. A chat would carry its own
+   * memory of the game instead, which goes stale the moment a row is edited by
+   * hand, and would re-send every earlier version of the bank every turn. The
+   * budget buys tweaks; it should not be spent on a transcript re-reading
+   * itself.
+   *
+   * What a chat WOULD give is a follow-up that refers back — "I still don't
+   * like it, change it again". That is handled with a short window of what was
+   * asked and what was done (EditGame::historyOf), which is bounded, so the
+   * tenth tweak costs what the first did.
+   */
+  function askCard(half) {
+    const wrap = el('div', 'ask-ai');
+    const id = 'ask-' + half;
+
+    // "the words" undersold it: a request reaches every part of an entry —
+    // the Spanish, the English, the gap sentence, the definition, both
+    // translations — so the label says what it can do, and the hint below
+    // names the parts so a teacher knows what they may ask about.
+    const label = el('label', 'ask-label', 'Ask AI to change something');
+    label.setAttribute('for', id);
+
+    const input = el('input', 'ask-input');
+    input.id = id;
+    input.type = 'text';
+    input.maxLength = 500;
+    input.placeholder = half === 'board'
+      ? 'e.g. make the $500 clues easier, or rename category 2'
+      : 'e.g. make the sentence for 7 simpler, or swap 12 for another word';
+
+    const button = el('button', 'btn btn-primary', 'Ask');
+    button.type = 'button';
+
+    /* Out of AI: the box closes rather than staying open and refusing.
+     * The game is still fully editable by hand, which is what the note says —
+     * this is the end of the model's help, not the end of the teacher's. */
+    const spent = aiPercent !== null && aiPercent >= 100;
+    if (spent) {
+      input.disabled = true;
+      button.disabled = true;
+    }
+
+    const send = () => {
+      const request = input.value.trim();
+      if (request) askForChange(request, button, input);
+    };
+    button.onclick = send;
+    input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); send(); } };
+
+    const row = el('div', 'ask-row');
+    row.append(input, button);
+
+    const note = el('p', 'ask-note');
+    note.hidden = !spent;
+    if (spent) {
+      note.className = 'ask-note problems';
+      note.textContent = 'This game has used all of its AI. You can still change anything here yourself.';
+    }
+
+    wrap.append(label, row, note);
+
+    if (aiPercent !== null) wrap.append(meterNote());
+
+    return wrap;
+  }
+
+  function meterNote() {
+    const meter = el('div', 'ai-meter');
+    meter.append(el('p', '', aiPercent >= 100
+      ? 'AI used on this game: 100%.'
+      : 'AI used on this game: ' + aiPercent + '%. After that you can still change it yourself.'));
+
+    return meter;
+  }
+
+  async function askForChange(request, button, input) {
+    // The model is sent the SAVED game, so an unsaved hand edit would be
+    // written over by the reply. Save it first rather than lose it.
+    if (dirty) await saveQuietly();
+
+    button.disabled = true;
+    input.disabled = true;
+    showAskNote('Asking for that change…', '');
+
+    try {
+      const res = await fetch(urls.ask, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': token(),
+        },
+        body: JSON.stringify({ request }),
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok && res.status !== 202) {
+        button.disabled = false;
+        input.disabled = false;
+
+        return showAskNote(body.message || askError(body), 'problems');
+      }
+
+      input.value = '';
+      watchAsking();
+    } catch {
+      button.disabled = false;
+      input.disabled = false;
+      showAskNote('We could not reach the site. Please try again.', 'problems');
+    }
+  }
+
+  function askError(body) {
+    const errors = body && body.errors;
+    const first = errors && Object.keys(errors)[0];
+
+    return first ? errors[first][0] : 'We could not make that change.';
+  }
+
+  /* Polled, like the first writing is: one teacher, one game, a wait measured
+   * in tens of seconds. */
+  function watchAsking() {
+    showAskNote('Making that change… this takes under a minute.', 'busy');
+    let tries = 0;
+
+    (function poll() {
+      if (tries++ > 120) return;
+      setTimeout(function () {
+        fetch(urls.asking, { credentials: 'same-origin', cache: 'no-store' })
+          .then(res => res.json())
+          .then(body => {
+            if (body.status === 'working') return poll();
+            reloadThen(() => (body.status === 'failed'
+              ? showAskNote(body.message || 'We could not make that change.', 'problems')
+              : afterAsk(body)));
+          })
+          .catch(poll);
+      }, tries < 8 ? 1500 : 3000);
+    })();
+  }
+
+  /* The reply is merged on the server, so the page reads the game back rather
+   * than applying the change itself — one merge, not two that can disagree. */
+  async function reloadThen(done) {
+    try {
+      const res = await fetch(urls.payload, { credentials: 'same-origin', cache: 'no-store' });
+      if (res.ok) {
+        game = await res.json();
+        originalFaces = faceList();
+        dirty = false;
+      }
+    } catch { /* keep what is on screen */ }
+
+    render();
+    done();
+  }
+
+  function afterAsk(body) {
+    const changed = Array.isArray(body.changed) ? body.changed : [];
+    // The bank answers by position, the board by category and value.
+    const onBoard = changed.length > 0 && typeof changed[0] === 'object';
+
+    aiChanged = {
+      items: onBoard ? [] : changed,
+      clues: onBoard ? changed : [],
+      names: body.renamed || [],
+      final: !!body.final_changed,
+    };
+
+    markChanged();
+
+    const done = [];
+    if (aiChanged.items.length) done.push('Changed ' + aiChanged.items.map(i => '#' + (i + 1)).join(', ') + '.');
+    if (aiChanged.clues.length) done.push('Rewrote ' + aiChanged.clues.length + ' clue' + (aiChanged.clues.length === 1 ? '' : 's') + '.');
+    if (aiChanged.names.length) done.push('Renamed ' + aiChanged.names.length + ' categor' + (aiChanged.names.length === 1 ? 'y' : 'ies') + '.');
+    if (aiChanged.final) done.push('Rewrote the final wager.');
+    if (body.removed) done.push('Removed ' + body.removed + ' word' + (body.removed === 1 ? '' : 's') + '.');
+
+    // The model's own note first: it is the only thing that explains a reply
+    // that changed nothing.
+    const parts = [body.message, done.length ? done.join(' ') : 'Nothing was changed.'];
+    if (done.length) parts.push('Changes are highlighted — please check them.');
+
+    // An edit to the words is exactly what makes a claimed pack's printed set
+    // out of date, so the server says whether paper is now worth offering.
+    if (typeof body.cards_worth_printing === 'boolean' && body.cards_worth_printing !== cardsWorthPrinting) {
+      cardsWorthPrinting = body.cards_worth_printing;
+      render();
+      markChanged();
+    }
+
+    showAskNote(parts.filter(Boolean).join(' '), done.length ? 'ready' : '');
+    showMeter(body.ai_percent_used);
+  }
+
+  /* Put on after the render, because the render is built from the payload and
+   * knows nothing about who wrote what. */
+  function markChanged() {
+    aiChanged.items.forEach(i => {
+      const row = document.querySelector('.word-row[data-index="' + i + '"]');
+      if (row) row.classList.add('ai-changed');
+    });
+    aiChanged.clues.forEach(c => {
+      const cell = document.querySelector('.board-cell[data-category="' + c.category + '"][data-clue="' + c.clue + '"]');
+      if (cell) cell.classList.add('ai-changed');
+    });
+  }
+
+  /* The one place Ask AI speaks, and deliberately the only one: it sits under
+   * the box the teacher just used, where they are already looking. A banner at
+   * the top of the page would be out of sight on a thirty-word bank. */
+  function showAskNote(text, kind) {
+    document.querySelectorAll('.ask-note').forEach(note => {
+      note.hidden = !text;
+      note.textContent = text;
+      note.className = 'ask-note' + (kind ? ' ' + kind : '');
+    });
+  }
+
+  /* Only once most of the credit's AI is gone: a teacher who never approaches
+   * the limit never learns there is one. */
+  function showMeter(percent) {
+    if (percent == null) return;
+
+    // Kept, so the boxes rebuilt by the next render start in the right state
+    // — including closing themselves once the budget is gone.
+    aiPercent = percent;
+    document.querySelectorAll('.ai-meter').forEach(node => node.remove());
+    document.querySelectorAll('.ask-ai').forEach(card => card.append(meterNote()));
+
+    if (percent >= 100) render();
   }
 
   /* ---------- the page ---------- */
@@ -75,13 +427,25 @@
   function render() {
     root.innerHTML = '';
     root.append(bar(), checksPanel());
+    if (isDraft) root.append(draftBar());
 
     const games = game.games || {};
     const hasWords = Array.isArray(game.items) && game.items.length;
 
     if (hasWords && games.bingo) root.append(wordsCard());
     if (games.jeopardy) root.append(boardCard());
-    if (games.bingo) root.append(bingoNote());
+    /* The online game always follows the words, so this is only about paper.
+     * A claimed pack's printed cards are right until a word changes, and the
+     * server says so (TeacherGame::cardsAreWorthPrinting) — offering a
+     * download to a teacher who has changed nothing sends them to the printer
+     * for the set already in their download. A game made here has no other
+     * set, so it always offers one. */
+    if (games.bingo && cardsWorthPrinting) {
+      const cards = bingoNote();
+      if (cards) root.append(cards);
+    }
+
+    if (games.jeopardy && answerSheetAvailable) root.append(answerSheetNote());
     if (hasWords && !games.bingo) root.append(unusedWordsCard());
 
     check();
@@ -132,6 +496,49 @@
     return (game.items || []).find(item => window.SharedJeopardyBoard.bare(item.face) === key) || null;
   }
 
+  /* A draft: what it is not yet, and the one button that changes that.
+   *
+   * Publishing is the moment a teacher gets what they paid for, so the bar
+   * says plainly what is still missing from their side — it is not playable,
+   * it is not printable, and the credit is still theirs to take back. */
+  function draftBar() {
+    const wrap = el('div', 'draft-bar');
+
+    const words = el('div');
+    words.append(el('strong', '', 'This is a draft'));
+    words.append(el('p', '', 'Not playable or printable yet, and deleting it gives your credit back.'));
+    wrap.append(words);
+
+    const written = (game.items || []).length > 0;
+
+    if (!written && urls.write) {
+      const ask = el('button', 'btn btn-ghost', 'Let AI write it');
+      ask.type = 'button';
+      ask.onclick = () => askAi(ask);
+      wrap.append(ask);
+    }
+
+    // A real form, not fetch: publishing can be refused for a reason the
+    // teacher must read, and Laravel already knows how to send them back with
+    // it.
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = urls.publish;
+
+    const csrf = document.createElement('input');
+    csrf.type = 'hidden';
+    csrf.name = '_token';
+    csrf.value = token();
+
+    const publish = el('button', 'btn btn-primary', 'Publish');
+    publish.type = 'submit';
+
+    form.append(csrf, publish);
+    wrap.append(form);
+
+    return wrap;
+  }
+
   function bar() {
     const wrap = el('div', 'bar');
 
@@ -144,13 +551,18 @@
     save.type = 'button';
     save.onclick = () => saveGame(save);
 
-    const play = el('a', 'btn btn-ghost', 'Play ▸');
-    play.href = urls.play;
-
     const back = el('a', 'btn btn-ghost', 'My games');
     back.href = urls.games;
 
-    wrap.append(theme, state, save, play, back);
+    wrap.append(theme, state, save);
+
+    if (!isDraft) {
+      const play = el('a', 'btn btn-ghost', 'Play ▸');
+      play.href = urls.play;
+      wrap.append(play);
+    }
+
+    wrap.append(back);
     return wrap;
   }
 
@@ -179,6 +591,25 @@
 
     game.items.forEach((item, i) => list.append(wordRow(item, i, count, list)));
 
+    /* The first word starts open.
+     *
+     * A closed row shows the article, the Spanish and the English, which looks
+     * like the whole entry — nothing on it says a gap sentence and a
+     * definition are behind the chevron. The lead above says so, and the
+     * chevron has a tooltip, but both need reading and a tooltip is nothing on
+     * a tablet. One open row shows the shape of an entry instead of describing
+     * it, and costs a single screen's worth of scrolling.
+     */
+    if (!shownWhatAWordHolds && game.items.length) {
+      shownWhatAWordHolds = true;
+      const first = list.querySelector('.word-row');
+      if (first) {
+        first.classList.add('open');
+        const chevron = first.querySelector('.word-open');
+        if (chevron) chevron.setAttribute('aria-expanded', 'true');
+      }
+    }
+
     const add = el('button', 'btn btn-ghost add', '+ Add a word');
     add.type = 'button';
     add.onclick = () => {
@@ -189,6 +620,10 @@
     };
 
     card.append(tools, list, add);
+    // The box goes with the half it changes: a teacher unhappy with a word
+    // should not have to scroll past the board to say so.
+    if (urls.ask) card.append(askCard('items'));
+
     return card;
   }
 
@@ -207,6 +642,8 @@
 
   function wordRow(item, index, count, list) {
     const row = el('div', 'word-row');
+    // So an Ask AI change can be pointed at once the card is rebuilt.
+    row.dataset.index = String(index);
 
     const head = el('div', 'word-head');
 
@@ -323,7 +760,7 @@
 
     const grid = el('div', 'board-grid');
     const cheapest = lowestValue(board);
-    (board.categories || []).forEach(cat => grid.append(categoryColumn(cat, cheapest)));
+    (board.categories || []).forEach((cat, ci) => grid.append(categoryColumn(cat, cheapest, ci)));
 
     // On a phone the columns are wider than the screen, so the board scrolls
     // sideways one column at a time and this jumps between them.
@@ -347,6 +784,8 @@
 
     card.append(topScroller(grid), grid);
     card.append(finalSection(board));
+    if (urls.ask) card.append(askCard('board'));
+
     return card;
   }
 
@@ -412,7 +851,7 @@
     return empty;
   }
 
-  function categoryColumn(cat, cheapest) {
+  function categoryColumn(cat, cheapest, ci) {
     const col = el('div', 'board-col');
 
     // A textarea, not an input: a long name in an input scrolls out of sight,
@@ -424,12 +863,15 @@
     name.oninput = () => { cat.name = name.value; touched(); };
     col.append(name);
 
-    (cat.clues || []).forEach(clue => col.append(clueCell(clue, cheapest)));
+    (cat.clues || []).forEach((clue, qi) => col.append(clueCell(clue, cheapest, ci, qi)));
     return col;
   }
 
-  function clueCell(clue, cheapest) {
+  function clueCell(clue, cheapest, ci, qi) {
     const cell = el('div', 'board-cell');
+    // Addressed the way applyBoardEdit reports a change back.
+    cell.dataset.category = String(ci);
+    cell.dataset.clue = String(qi);
 
     const head = el('div', 'board-cell-head');
     head.append(el('span', 'board-value', '$' + (clue.value != null ? clue.value : '?')));
@@ -608,17 +1050,41 @@
    * their download were printed with the old ones — and the way to get new
    * ones on paper. */
   function bingoNote() {
+    const sizes = [...new Set((game.games.bingo.cards || []).map(card => card.size))].sort((a, b) => b - a);
+    if (!sizes.length) return null;
+
     const card = el('div', 'card');
     card.append(el('h2', '', 'Bingo cards'));
-    card.append(el('p', 'lead', 'Change a word and the website builds new cards to match it, so the game you play online is always right. The cards in your TpT download still have the words they were printed with — print a new set here when you need them on paper.'));
-
-    const sizes = [...new Set((game.games.bingo.cards || []).map(card => card.size))].sort((a, b) => b - a);
-    if (!sizes.length) return card;
+    card.append(el('p', 'lead', 'Download and print these bingo cards with the changes you have made.'));
 
     const row = el('div', 'print-row');
     sizes.forEach(size => row.append(printButton(size)));
     card.append(row);
-    card.append(el('p', 'muted-note', 'Six cards to a sheet, with cut lines. Save your changes first — the cards are made from the words as they were saved.'));
+
+    return card;
+  }
+
+  /* The quiz's equivalent of the bingo cards: the page each team writes on.
+   *
+   * Blank — the categories and the money, with a box under each — so it gives
+   * nothing away and does not go stale when a clue is rewritten. The final's
+   * own category is left blank on it for the same reason it is on the printed
+   * pack: it is announced when the board is empty, and a team reading it all
+   * game has had the thing the bet turns on. */
+  function answerSheetNote() {
+    const card = el('div', 'card');
+    card.append(el('h2', '', 'Team answer sheet'));
+    card.append(el('p', 'lead', 'One page per team to write their answers on, with a space for the final wager.'));
+
+    const row = el('div', 'print-row');
+    row.append(printableButton({
+      label: 'Print the answer sheets',
+      busy: 'Making the answer sheets…',
+      url: urls.answerSheet,
+      body: {},
+      poll: () => urls.answerSheetStatus,
+    }));
+    card.append(row);
 
     return card;
   }
@@ -632,7 +1098,22 @@
    * file is named after the cards themselves.
    */
   function printButton(size) {
-    const button = el('button', 'btn btn-ghost', 'Print the ' + size + '×' + size + ' cards');
+    return printableButton({
+      label: 'Print the ' + size + '×' + size + ' cards',
+      busy: 'Making the ' + size + '×' + size + ' cards…',
+      url: urls.cards,
+      body: { size: size },
+      poll: () => urls.cardsStatus.replace('SIZE', String(size)),
+    });
+  }
+
+  /* One printable, asked for and waited on.
+   *
+   * The cards and the team answer sheet differ only in what they are called
+   * and what the request says; the render is queued either way, because each
+   * one is a whole browser. */
+  function printableButton(printable) {
+    const button = el('button', 'btn btn-ghost', printable.label);
     button.type = 'button';
 
     const settle = (label, enabled) => {
@@ -641,13 +1122,19 @@
     };
 
     button.onclick = async () => {
-      settle('Making the ' + size + '×' + size + ' cards…', false);
+      settle(printable.busy, false);
       try {
-        const res = await fetch(urls.cards, {
+        /* The cards are built from the SAVED words, so an unsaved edit would
+         * print yesterday's set. This used to be a line of small print asking
+         * the teacher to save first; saving for them is better than telling
+         * them, and it is the same quiet save Ask AI does. */
+        if (dirty) await saveQuietly();
+
+        const res = await fetch(printable.url, {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': token() },
-          body: JSON.stringify({ size: size }),
+          body: JSON.stringify(printable.body),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok && res.status !== 202) {
@@ -655,13 +1142,13 @@
           return;
         }
 
-        const url = body.status === 'ready' ? body.url : await waitForCards(size);
+        const url = body.status === 'ready' ? body.url : await waitForPrintable(printable.poll());
         if (!url) {
           settle('That is taking too long — try again', true);
           return;
         }
         window.location.href = url;
-        settle('Print the ' + size + '×' + size + ' cards', true);
+        settle(printable.label, true);
       } catch {
         settle('We could not reach the site — try again', true);
       }
@@ -673,8 +1160,7 @@
   /* Waits for the worker to finish. Polled rather than pushed: one file, one
    * teacher, and a socket for this would be a lot of moving parts for a wait
    * that is usually over before the third check. */
-  async function waitForCards(size) {
-    const url = urls.cardsStatus.replace('SIZE', String(size));
+  async function waitForPrintable(url) {
     for (let attempt = 0; attempt < 40; attempt++) {
       await new Promise(resolve => setTimeout(resolve, attempt < 5 ? 700 : 1500));
       const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
@@ -731,10 +1217,21 @@
 
   /* ---------- saving ---------- */
 
-  async function saveGame(button) {
+  function saveGame(button) {
+    return persist(button);
+  }
+
+  /* Saving with nothing to click: Ask AI sends the SAVED game, so an unsaved
+   * hand edit has to reach the server before the request does or the model's
+   * reply would be merged into a game that never had it. */
+  function saveQuietly() {
+    return persist(null);
+  }
+
+  async function persist(button) {
     if (saving) return;
     saving = true;
-    button.disabled = true;
+    if (button) button.disabled = true;
     setState('Saving…', '');
 
     rebuildCardsIfWordsChanged();
@@ -764,7 +1261,7 @@
       setState('We could not reach the site. Your changes are still on this page.', 'failed');
     } finally {
       saving = false;
-      button.disabled = false;
+      if (button) button.disabled = false;
     }
   }
 
@@ -776,6 +1273,9 @@
   function rebuildCardsIfWordsChanged() {
     const bingo = game.games && game.games.bingo;
     if (!bingo || !Array.isArray(game.items) || faceList() === originalFaces) return;
+
+    // The words moved, so whatever is printed no longer matches them.
+    cardsWorthPrinting = true;
 
     const sets = bingo.cardSets || [{ size: 4, count: 48 }, { size: 3, count: 48 }];
     bingo.cardSets = sets;

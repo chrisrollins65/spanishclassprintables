@@ -148,6 +148,27 @@ function validateDeck(deck, size = 4) {
     });
   });
 
+  /* One word's own sentence and definition must not be the same clue twice.
+   *
+   * The clue types are the three ways the website can call a word out, and a
+   * teacher playing "Mezcla" gets whichever one comes up. When the definition
+   * is the gap sentence with the gap filled in — "El ___ es rosa y le gusta
+   * jugar en el barro" against "Es rosa y le gusta jugar en el barro" — the
+   * pack has two clue types on paper and one in the room, and the round that
+   * was meant to make the child listen differently makes them listen again.
+   *
+   * Checked by overlap rather than equality, because the echo is never an
+   * exact copy: the article moves, the gap closes, a word changes. A
+   * definition built almost entirely out of its own sentence's words is the
+   * shape this takes.
+   */
+  items.forEach(item => {
+    const echo = clueEcho(item.sentence, item.definition);
+    if (echo) {
+      problems.push(`"${displayFace(item)}" has a definition that is its own gap sentence reworded (${echo}); write a different kind of clue`);
+    }
+  });
+
   /* A SPANISH clue may name another face on the cards. An ENGLISH one may not.
    *
    * This was once checked over every clue type, and a pack's own subject matter
@@ -215,6 +236,40 @@ function escapeRegExp(value) {
 function normalizeClue(value) {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/* The words of a clue, for comparing one with another.
+ *
+ * Accents and punctuation go because the echo survives both, and the gap
+ * itself goes because it is the one place the two clues are guaranteed to
+ * differ. Short function words (de, la, en, y) are dropped: they are the words
+ * two unrelated Spanish sentences share anyway, so counting them would flag
+ * clues that have nothing in common but grammar.
+ */
+function clueWords(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/_+/g, ' ')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9ñ\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2);
+}
+
+/* How much of the definition is just its own gap sentence, or '' if it is its
+ * own clue. Deliberately a high bar — the two clues describe the same word, so
+ * some shared words are expected and right. */
+function clueEcho(sentence, definition) {
+  const inSentence = new Set(clueWords(sentence));
+  const inDefinition = clueWords(definition);
+
+  // Too short to judge: a three-word definition shares words with anything.
+  if (inDefinition.length < 4 || inSentence.size < 4) return '';
+
+  const shared = inDefinition.filter(word => inSentence.has(word)).length;
+  const overlap = shared / inDefinition.length;
+
+  return overlap >= 0.8 ? `${shared} of its ${inDefinition.length} words` : '';
 }
 
 /**

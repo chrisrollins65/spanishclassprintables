@@ -156,6 +156,44 @@
   .print-row .btn { font-size: .98rem; padding: .7em 1.2em; }
   .print-row .btn:disabled { opacity: .7; cursor: progress; }
 
+  /* A draft: not playable, not printable, and one button away from being
+     both. */
+  .draft-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+               background: var(--gold-soft); color: #5B4200; border-radius: 14px; padding: 14px 18px; }
+  .draft-bar strong { font: 600 1.05rem 'Fredoka', sans-serif; }
+  .draft-bar p { font-size: .92rem; margin-top: 2px; }
+  .draft-bar form { margin: 0; }
+  .writing { display: flex; align-items: center; gap: 12px; background: var(--wash); border-radius: 14px; padding: 16px 18px; }
+  .writing .spinner { width: 18px; height: 18px; border-radius: 50%; flex: none;
+                      border: 3px solid rgba(190, 0, 135, .25); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ai-meter { font-size: .88rem; color: var(--muted); margin-top: 6px; }
+
+  /* Ask AI: one line per half, at the foot of the half it changes. */
+  .ask-ai { margin-top: 20px; padding-top: 18px; border-top: 2px dashed var(--edge); }
+  .ask-label { display: block; font: 600 1rem 'Fredoka', sans-serif; margin-bottom: 6px; }
+  .ask-row { display: flex; gap: 10px; align-items: stretch; }
+  .ask-input { flex: 1 1 auto; min-width: 0; font: inherit; padding: .6em .8em;
+               border: 2px solid var(--edge); border-radius: 12px; background: var(--card); color: var(--ink); }
+  .ask-input:focus { border-color: var(--accent); outline: none; }
+  .ask-input:disabled { opacity: .6; }
+  .ask-row .btn { flex: none; }
+  .ask-note { margin-top: 10px; font-size: .92rem; border-radius: 12px; padding: 10px 12px; background: var(--wash); }
+  .ask-note.problems { background: var(--gold-soft); color: #5B4200; }
+  /* Waiting on a model. The spinner rides the note rather than sitting in a
+     banner at the top of the page, where a teacher deep in a thirty-word bank
+     would never see it. */
+  .ask-note.busy { display: flex; align-items: center; gap: 10px; }
+  .ask-note.busy::before { content: ''; width: 16px; height: 16px; border-radius: 50%; flex: none;
+                           border: 3px solid rgba(190, 0, 135, .25); border-top-color: var(--accent);
+                           animation: spin .8s linear infinite; }
+  .ask-note.ready { background: #E3F6F4; color: #0B4F4B; }
+  @media (max-width: 520px) { .ask-row { flex-direction: column; } }
+
+  /* What the model just rewrote. Loud enough to find by scrolling, because
+     the whole point is that the teacher checks it. */
+  .ai-changed { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: 12px; }
+
   .loading { color: var(--muted); }
 @endpush
 
@@ -163,6 +201,20 @@
 {{-- Wider than the account pages: five board columns side by side is the point
      of the board view, and 760px fits three. --}}
 <div class="wrap">
+  @if ($errors->has('publish'))
+    <div class="checks problems" style="margin-bottom: 16px">
+      <h3>This game isn't ready to play yet</h3>
+      <ul>
+        @foreach ($errors->get('publish') as $problem)
+          @foreach ((array) $problem as $line)
+            <li>{{ $line }}</li>
+          @endforeach
+        @endforeach
+      </ul>
+      <p class="muted-note">Fix those and publish again. Everything else is yours to judge.</p>
+    </div>
+  @endif
+
   {{-- The editor builds itself from the game's own data (public/site/editor.js):
        one payload shape serves bingo and the quiz, and which sections appear
        depends on which games the payload holds. --}}
@@ -173,7 +225,23 @@
        data-games-url="{{ route('my-games') }}"
        data-cards-url="{{ route('my-games.cards', $game) }}"
        data-cards-status-url="{{ route('my-games.cards.status', [$game, 'SIZE']) }}"
-       data-game-id="{{ $game->id }}">
+       data-game-id="{{ $game->id }}"
+       data-kind="{{ $game->kind }}"
+       data-draft="{{ $game->isPublished() ? '' : '1' }}"
+       data-write-url="{{ route('my-games.write', $game) }}"
+       data-publish-url="{{ route('my-games.publish', $game) }}"
+       data-writing-url="{{ route('my-games.writing', $game) }}"
+       data-ai-percent="{{ $aiPercentUsed ?? '' }}"
+       data-cards-worth-printing="{{ ($cardsWorthPrinting ?? true) ? '1' : '' }}"
+       data-answer-sheet-url="{{ route('my-games.answer-sheet', $game) }}"
+       data-answer-sheet-status-url="{{ route('my-games.answer-sheet.status', $game) }}"
+       data-answer-sheet="{{ ($answerSheetAvailable ?? false) ? '1' : '' }}"
+       data-ask-url="{{ route('my-games.ask', $game) }}"
+       data-asking-url="{{ route('my-games.asking', $game) }}"
+       data-writing="{{ \App\Jobs\WriteGame::statusOf($game->id)['status'] }}"
+       {{-- An edit left running when the teacher closed the tab: the page
+            picks the wait back up rather than showing a game mid-change. --}}
+       data-asking="{{ \App\Jobs\EditGame::statusOf($game->id)['status'] }}">
     <p class="loading">Loading your game…</p>
   </div>
 </div>

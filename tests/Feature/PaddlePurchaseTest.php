@@ -262,7 +262,7 @@ class PaddlePurchaseTest extends TestCase
         $user = User::factory()->create();
         $this->send($this->sale($user, 'txn_1', 'pri_single'));
 
-        $draft = TeacherGame::factory()->create(['user_id' => $user->id]);
+        $draft = TeacherGame::factory()->draft()->create(['user_id' => $user->id]);
         CreditUnit::claimFor($user, $draft);
 
         $this->send($this->refund())->assertOk();

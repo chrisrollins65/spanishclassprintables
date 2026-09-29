@@ -56,7 +56,7 @@ class RoomController extends Controller
      * of reading a room code out of the URL. That attribute is the only
      * difference between the two, so neither can drift from the other.
      */
-    public static function shell(?string $payloadUrl = null): string
+    public static function shell(?string $payloadUrl = null, array $attributes = []): string
     {
         $shell = public_path('game/room.html');
         abort_unless(is_file($shell), 404);
@@ -64,7 +64,17 @@ class RoomController extends Controller
         $html = self::versionAssets(file_get_contents($shell));
 
         if ($payloadUrl !== null) {
-            $html = str_replace('<main id="app">', '<main id="app" data-payload-url="'.e($payloadUrl).'">', $html);
+            $attributes = ['data-payload-url' => $payloadUrl] + $attributes;
+        }
+
+        if ($attributes !== []) {
+            $written = implode('', array_map(
+                fn (string $name, string $value): string => ' '.$name.'="'.e($value).'"',
+                array_keys($attributes),
+                $attributes,
+            ));
+
+            $html = str_replace('<main id="app">', '<main id="app"'.$written.'>', $html);
         }
 
         return $html;

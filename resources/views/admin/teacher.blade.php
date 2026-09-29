@@ -32,7 +32,7 @@
 
     {{-- By hand: an apology, a test account, a sale that arrived without its
          webhook. Undoing a purchase is a refund, not this. --}}
-    <form class="row-form" method="post" action="{{ route('admin.credits', $teacher) }}" style="margin-top: 14px">
+    <form class="row-form" method="post" action="{{ route('admin.credits', $teacher) }}" data-once style="margin-top: 14px">
       @csrf
       <div class="field">
         <label for="delta">Credits (+/−)</label>
@@ -63,7 +63,7 @@
               @if ($entry->reason === \App\Models\CreditEntry::PURCHASE)
                 {{-- Paddle refunds the money and tells us through the webhook;
                      the credits come off there, not here. --}}
-                <form method="post" action="{{ route('admin.refund', $entry) }}"
+                <form method="post" action="{{ route('admin.refund', $entry) }}" data-once
                       onsubmit="return confirm({{ Js::from('Ask Paddle to refund '.$entry->reference.' in full?') }})">
                   @csrf
                   <input type="hidden" name="reason" value="Requested by the teacher">
@@ -98,7 +98,7 @@
             <td>{{ $game->gamesLabel() }}</td>
             <td><span class="hint">{{ $game->source_code ? 'Claimed from '.$game->source_code : 'Created here' }}</span></td>
             <td>
-              <form method="post" action="{{ $game->isLocked() ? route('admin.unlock', $game) : route('admin.lock', $game) }}">
+              <form method="post" action="{{ $game->isLocked() ? route('admin.unlock', $game) : route('admin.lock', $game) }}" data-once>
                 @csrf
                 <button class="small-btn" type="submit">{{ $game->isLocked() ? 'Unlock' : 'Lock' }}</button>
               </form>

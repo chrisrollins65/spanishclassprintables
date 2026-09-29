@@ -22,20 +22,37 @@
   .remove:hover { color: #B3261E; }
   @media (max-width: 560px) { .game { flex-direction: column; align-items: flex-start; } }
   .empty { color: var(--muted); }
+  .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .head-row .btn { flex: none; }
+  .draft-tag { background: var(--gold-soft); color: #7A5200; font-weight: 800; font-size: .72rem; text-transform: uppercase;
+               letter-spacing: .05em; border-radius: 999px; padding: .2em .7em; }
   .locked { color: #8A5A00; background: var(--gold-soft); border-radius: 10px; padding: 8px 12px; margin-top: 6px; font-size: .9rem; font-weight: 600; }
 @endpush
 
 @section('content')
 <div class="wrap medium">
   <div class="card accent">
-    <h1>My games</h1>
-    <p class="lead">Add a game you bought on TpT with its code. Your copy is private to your account.</p>
+    <div class="head-row">
+      <div>
+        <h1>My games</h1>
+        <p class="lead">Make your own, or add a game you bought on TpT with its code.</p>
+      </div>
+      <a class="btn btn-primary" href="{{ route('my-games.create') }}">Make a game</a>
+    </div>
+
+    <p class="hint">
+      {{ $credits }} {{ $credits === 1 ? 'credit' : 'credits' }} ready to use.
+      @if ($held > 0)
+        {{ $held }} {{ $held === 1 ? 'is held by a draft' : 'are held by drafts' }} — deleting a draft gives its credit back.
+      @endif
+      <a href="{{ route('credits') }}">Get more</a>.
+    </p>
 
     @if (session('status'))
       <p class="notice">{{ session('status') }}</p>
     @endif
 
-    <form class="claim" method="post" action="{{ route('my-games.claim') }}">
+    <form class="claim" method="post" action="{{ route('my-games.claim') }}" data-once>
       @csrf
       <label class="visually-hidden" for="code">Game code</label>
       {{-- Carried over from the game itself ("Change the words or questions"),
@@ -59,7 +76,10 @@
           <li class="game">
             <div>
               <h3>{{ $game->theme }}</h3>
-              <p class="meta">{{ $game->gamesLabel() }} · changed {{ $game->updated_at->diffForHumans() }}</p>
+              <p class="meta">
+                {{ $game->gamesLabel() }} · changed {{ $game->updated_at->diffForHumans() }}
+                @unless ($game->isPublished()) · <span class="draft-tag">Draft</span> @endunless
+              </p>
               {{-- A refunded purchase keeps the game but stops it playing, so
                    say so here rather than letting the buttons fail. --}}
               @if ($game->isLocked())
@@ -68,11 +88,15 @@
             </div>
             <div class="actions">
               @unless ($game->isLocked())
-                <a class="btn btn-ghost" href="{{ route('my-games.edit', $game) }}">Edit</a>
-                <a class="btn btn-primary" href="{{ route('my-games.play', $game) }}">Play ▸</a>
+                <a class="btn btn-ghost" href="{{ route('my-games.edit', $game) }}">{{ $game->isPublished() ? 'Edit' : 'Finish it' }}</a>
+                @if ($game->isPublished())
+                  <a class="btn btn-primary" href="{{ route('my-games.play', $game) }}">Play ▸</a>
+                @endif
               @endunless
-              <form method="post" action="{{ route('my-games.destroy', $game) }}"
-                    onsubmit="return confirm({{ Js::from('Remove “'.$game->theme.'” from your games? Your changes to it will be lost.') }})">
+              <form method="post" action="{{ route('my-games.destroy', $game) }}" data-once
+                    onsubmit="return confirm({{ Js::from($game->isPublished()
+                        ? 'Remove “'.$game->theme.'” from your games? Your changes to it will be lost.'
+                        : 'Delete the draft “'.$game->theme.'”? Its credit goes back to you, but anything AI has already written for it stays used.') }})">
                 @csrf
                 @method('DELETE')
                 <button class="remove" type="submit">Remove</button>

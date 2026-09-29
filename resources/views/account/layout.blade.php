@@ -53,9 +53,22 @@
   .top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 12px; }
   .logo img { height: 44px; width: auto; display: block; }
   .nav { display: flex; align-items: center; gap: 18px; }
-  .nav a, .nav button { color: var(--ink); text-decoration: none; font: 700 .98rem 'Nunito', sans-serif; background: none; border: 0; cursor: pointer; padding: 0; }
+  /* nowrap because a link is a phrase: "My games" broken after "My" reads as
+     two separate links. */
+  .nav a, .nav button { color: var(--ink); text-decoration: none; font: 700 .98rem 'Nunito', sans-serif;
+                        background: none; border: 0; cursor: pointer; padding: 0; white-space: nowrap; }
   .nav a:hover, .nav button:hover { color: var(--accent); }
-  @media (max-width: 560px) { .logo img { height: 36px; } .nav { gap: 12px; } }
+
+  /* Below this the logo and four or five links stop fitting on one line, and
+     the links were being squeezed until the words broke inside themselves.
+     The header takes a second row instead: logo above, links centred under
+     it, each with room to be read. A menu behind a button would hide four
+     links to save one row. */
+  @media (max-width: 620px) {
+    .logo img { height: 34px; }
+    .top .wrap { flex-direction: column; gap: 10px; padding-block: 10px; }
+    .nav { gap: 18px; flex-wrap: wrap; justify-content: center; }
+  }
 
   main { flex: 1; padding-block: clamp(28px, 6vw, 64px); }
   .narrow { max-width: 460px; }
@@ -130,6 +143,10 @@
 <footer>
   <a href="/">spanishclassprintables.com</a>
 </footer>
+
+{{-- Stops the second half of a double-tap posting a form twice. The courtesy
+     half only: what a repeat would cost is guarded on the server too. --}}
+<script src="/site/once.js{{ \App\Http\Controllers\RoomController::stamp('site/once.js') }}"></script>
 
 </body>
 </html>

@@ -50,7 +50,7 @@ class InternalPinAssetController extends Controller
         $this->authorizeSecret($request);
 
         $request->validate([
-            'image' => ['required', 'file', 'mimes:png', 'max:' . (self::MAX_BYTES / 1024)],
+            'image' => ['required', 'file', 'mimes:png', 'max:'.(self::MAX_BYTES / 1024)],
             // The packet name, used to make the URL readable. Optional: a pin
             // still works with a hash for a name, it is just harder to eyeball
             // against the CSV when something looks wrong.
@@ -59,12 +59,12 @@ class InternalPinAssetController extends Controller
 
         /** @var UploadedFile $image */
         $image = $request->file('image');
-        $filename = $this->filenameFor($image, (string)$request->input('name', ''));
+        $filename = $this->filenameFor($image, (string) $request->input('name', ''));
 
         Storage::disk('public')->putFileAs(self::DIRECTORY, $image, $filename);
 
         return response()->json([
-            'url' => Storage::disk('public')->url(self::DIRECTORY . '/' . $filename),
+            'url' => Storage::disk('public')->url(self::DIRECTORY.'/'.$filename),
             'filename' => $filename,
             'swept' => $this->sweepExpired(),
         ]);
@@ -85,7 +85,7 @@ class InternalPinAssetController extends Controller
         $slug = Str::limit(Str::slug($name), 60, '');
         $hash = substr(hash_file('sha1', $image->getPathname()), 0, 8);
 
-        return ($slug !== '' ? $slug . '-' : 'pin-') . $hash . '.png';
+        return ($slug !== '' ? $slug.'-' : 'pin-').$hash.'.png';
     }
 
     /**
@@ -119,17 +119,17 @@ class InternalPinAssetController extends Controller
 
     private function retentionDays(): int
     {
-        return max(1, (int)config('services.pin_assets.retention_days', 14));
+        return max(1, (int) config('services.pin_assets.retention_days', 14));
     }
 
     private function authorizeSecret(Request $request): void
     {
-        $secret = (string)config('services.pin_assets.secret');
+        $secret = (string) config('services.pin_assets.secret');
 
         // An unset secret refuses everything rather than accepting everything:
         // a deploy that forgets the env line fails closed.
         abort_unless(
-            $secret !== '' && hash_equals($secret, (string)$request->header('X-Pin-Asset-Secret')),
+            $secret !== '' && hash_equals($secret, (string) $request->header('X-Pin-Asset-Secret')),
             403,
         );
     }

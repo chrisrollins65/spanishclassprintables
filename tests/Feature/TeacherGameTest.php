@@ -171,6 +171,30 @@ class TeacherGameTest extends TestCase
             ->assertJsonPath('theme', 'Los Deportes');
     }
 
+    /**
+     * The end-of-game screen asks the teacher to review the pack on TpT. A
+     * game MADE here was never sold there, so asking its author to review
+     * their purchase of it is the mistake the demo room already guards
+     * against — the shell is told which this is (see afterGame in ui.js).
+     */
+    public function test_the_shell_is_told_whether_the_game_was_bought(): void
+    {
+        $made = TeacherGame::factory()->create(['source_code' => null]);
+
+        $this->actingAs($made->user)
+            ->get("/my-games/{$made->id}/play")
+            ->assertOk()
+            ->assertSee('data-made-here="1"', false);
+
+        $claimed = TeacherGame::factory()->create(['source_code' => 'ABC15']);
+
+        $this->actingAs($claimed->user)
+            ->get("/my-games/{$claimed->id}/play")
+            ->assertOk()
+            // Bought on TpT, so it keeps the ask.
+            ->assertSee('data-made-here=""', false);
+    }
+
     public function test_another_teachers_game_is_not_found(): void
     {
         $game = TeacherGame::factory()->create();

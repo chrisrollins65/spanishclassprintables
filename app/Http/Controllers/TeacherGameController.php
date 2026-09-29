@@ -2,14 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Ai\Writer;
+use App\Jobs\EditGame;
+use App\Jobs\RenderAnswerSheet;
 use App\Jobs\RenderBingoCards;
+use App\Jobs\WriteGame;
+use App\Models\CreditUnit;
 use App\Models\Room;
 use App\Models\TeacherGame;
+use App\Models\User;
+use App\Support\PrintablePdf;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -26,6 +36,15 @@ class TeacherGameController extends Controller
     /** The same ceiling a published room has (RoomController). */
     private const MAX_PAYLOAD_BYTES = 2_000_000;
 
+    /**
+     * How long two identical "start this game" presses count as one press.
+     *
+     * Long enough to cover a slow post and an impatient second tap, short
+     * enough that a teacher who meant to make a second game on the same topic
+     * is not made to wait. See justStarted().
+     */
+    private const REPEAT_PRESS_SECONDS = 30;
+
     public function index(Request $request): View
     {
         // Everything the list shows except the payload: a bingo payload is
@@ -33,11 +52,15 @@ class TeacherGameController extends Controller
         // named, or it silently reads as empty — which is how a locked game
         // first appeared on this page as a playable one.
         $games = $request->user()->teacherGames()
-            ->select(['id', 'user_id', 'theme', 'games', 'source_code', 'locked_at', 'locked_reason', 'created_at', 'updated_at'])
+            ->select(['id', 'user_id', 'theme', 'games', 'kind', 'source_code', 'locked_at', 'locked_reason', 'published_at', 'created_at', 'updated_at'])
             ->latest('updated_at')
             ->get();
 
-        return view('games.index', ['games' => $games]);
+        return view('games.index', [
+            'games' => $games,
+            'credits' => $request->user()->availableCredits(),
+            'held' => $request->user()->heldCredits(),
+        ]);
     }
 
     /**
@@ -86,9 +109,309 @@ class TeacherGameController extends Controller
             ->with('status', "\"{$game->theme}\" is now in your games.");
     }
 
+    /** Choose what to make: which game, what it is about, and who writes it. */
+    public function create(Request $request): View
+    {
+        return view('games.create', [
+            'credits' => $request->user()->availableCredits(),
+            'held' => $request->user()->heldCredits(),
+            'kinds' => TeacherGame::LABELS,
+            'aiAvailable' => Writer::withinDailyLimit() && config('ai.keys.gemini') !== '',
+        ]);
+    }
+
+    /**
+     * Start a game, which is where a credit goes.
+     *
+     * The credit is taken before anything is written, so every model call has
+     * one behind it — and handed straight back if there is nothing to write
+     * with, so a teacher never pays for a button that did not work.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'kind' => ['required', Rule::in(array_keys(TeacherGame::LABELS))],
+            'theme' => ['required', 'string', 'max:120'],
+            'written_by' => ['required', Rule::in(['me', 'ai'])],
+        ]);
+
+        $teacher = $request->user();
+        $theme = trim($data['theme']);
+
+        /* One press at a time, per teacher and per press.
+         *
+         * The repeat check below reads before it writes, and a double-tap on a
+         * phone arrives as two requests at once: both read nothing, both
+         * create, and the teacher has paid twice. Serialising them is what
+         * makes the check mean anything — without it the guard passes a
+         * sequential test and fails the case it exists for.
+         */
+        $key = 'start-game:'.$teacher->id.':'.$data['kind'].':'.md5($theme);
+
+        try {
+            return Cache::lock($key, 30)->block(
+                10,
+                fn (): RedirectResponse => $this->startGame($teacher, $data, $theme),
+            );
+        } catch (LockTimeoutException) {
+            // Ten seconds behind another press of the same button. Something
+            // is wrong upstream, but nothing here has been charged.
+            return redirect()->route('my-games')
+                ->with('status', 'That took too long to start. Nothing has been charged — please try again.');
+        }
+    }
+
+    /** The making of the game itself, with the press held (see store()). */
+    private function startGame(User $teacher, array $data, string $theme): RedirectResponse
+    {
+        if ($again = $this->justStarted($teacher, $data['kind'], $theme)) {
+            return redirect()->route('my-games.edit', $again);
+        }
+
+        $game = new TeacherGame;
+        $game->id = $game->newUniqueId();
+        $game->user_id = $teacher->id;
+        $game->fill([
+            'theme' => $theme,
+            'kind' => $data['kind'],
+            'games' => $data['kind'],
+            'payload' => json_encode(TeacherGame::blank($data['kind'], $theme) + ['code' => $game->id], JSON_UNESCAPED_UNICODE),
+        ]);
+        $game->save();
+
+        $unit = CreditUnit::claimFor($teacher, $game);
+
+        if ($unit === null) {
+            // Nothing was taken and nothing was written; say so where credits
+            // are bought rather than leaving an unpaid draft behind.
+            $game->forceDelete();
+
+            return redirect()->route('credits')
+                ->with('status', 'You need a credit to make a game. One credit makes one game.');
+        }
+
+        if ($data['written_by'] === 'ai') {
+            WriteGame::markWorking($game->id);
+            WriteGame::dispatch($game->id);
+        }
+
+        return redirect()->route('my-games.edit', $game);
+    }
+
+    /**
+     * The same game this teacher started a moment ago, if they did.
+     *
+     * One press must not cost two credits. The button disables itself
+     * (public/site/once.js), but that is courtesy, not a guarantee: it is gone
+     * on a refresh onto the POST, on the back button, in a second tab, and in
+     * the gap before the script has loaded. A double-tap on a phone cost a
+     * teacher a credit and left them a duplicate draft.
+     *
+     * Matched on what the press said rather than on a token, because the
+     * failure being guarded is the SAME press arriving twice — same teacher,
+     * same kind, same topic, seconds apart. A token would also have to survive
+     * a back button, and a teacher who legitimately wants a second go meets an
+     * expired form instead of a game.
+     *
+     * Deliberately narrow: only a draft, only an untouched one, and only
+     * within the window. A teacher who really wants two games on one topic
+     * waits half a minute, or edits the first — and either way still has both
+     * their credits.
+     */
+    private function justStarted(User $teacher, string $kind, string $theme): ?TeacherGame
+    {
+        return $teacher->teacherGames()
+            ->whereNull('published_at')
+            ->where('kind', $kind)
+            ->where('theme', $theme)
+            ->where('created_at', '>=', now()->subSeconds(self::REPEAT_PRESS_SECONDS))
+            ->latest('created_at')
+            ->first();
+    }
+
+    /**
+     * Ask AI to write this game — the button on a draft that was started by
+     * hand, or a second try after a failure.
+     */
+    public function write(Request $request, string $game): JsonResponse
+    {
+        $game = $this->draft($request, $game);
+
+        if (! Writer::withinDailyLimit()) {
+            return response()->json(['status' => 'failed', 'message' => 'Writing is paused for today. Nothing has been charged — please try again tomorrow.'], 503);
+        }
+
+        $unit = $game->creditUnit;
+        if ($unit !== null && $unit->aiCentsLeft() <= 0) {
+            return response()->json(['status' => 'failed', 'message' => 'This credit has used all of its AI. You can still write and edit the game yourself.'], 422);
+        }
+
+        // Pressing twice is one generation: the second press finds it working
+        // and waits with the first.
+        if (WriteGame::statusOf($game->id)['status'] === 'working') {
+            return response()->json(['status' => 'working']);
+        }
+
+        WriteGame::markWorking($game->id);
+        WriteGame::dispatch($game->id);
+
+        return response()->json(['status' => 'working'], 202);
+    }
+
+    /** What the page watches while a model writes. */
+    /**
+     * Ask AI for one change to a game that already exists.
+     *
+     * The repeated half of writing a game, and what the per-credit AI budget
+     * is for: a teacher who does not like three of the words says so, rather
+     * than generating the whole thing again and losing the twenty-seven they
+     * were happy with.
+     *
+     * Allowed on a published game as well as a draft. A teacher who finds a
+     * bad clue the night before a lesson should be able to fix it; the cards
+     * are dealt from the words, so a bingo edit clears them and publishing
+     * deals them again.
+     */
+    public function ask(Request $request, string $game): JsonResponse
+    {
+        $game = $this->playable($request, $game);
+
+        $data = $request->validate([
+            'request' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'request.required' => 'Tell us what to change.',
+            'request.min' => 'Tell us a little more about what to change.',
+        ]);
+
+        if (! Writer::withinDailyLimit()) {
+            return response()->json(['status' => 'failed', 'message' => 'Writing is paused for today. Nothing has been charged — please try again tomorrow.'], 503);
+        }
+
+        $unit = $game->creditUnit;
+        if ($unit !== null && $unit->aiCentsLeft() <= 0) {
+            return response()->json(['status' => 'failed', 'message' => 'This credit has used all of its AI. You can still change the game yourself.'], 422);
+        }
+
+        if ($game->data() === []) {
+            return response()->json(['status' => 'failed', 'message' => 'There is nothing to change yet — write the game first.'], 422);
+        }
+
+        // One change at a time. Two at once would each be written against the
+        // game as it was before the other, and the second to finish would
+        // quietly throw the first away.
+        if (EditGame::statusOf($game->id)['status'] === 'working') {
+            return response()->json(['status' => 'working']);
+        }
+
+        EditGame::markWorking($game->id);
+        EditGame::dispatch($game->id, trim($data['request']));
+
+        return response()->json(['status' => 'working'], 202);
+    }
+
+    /** Where an Ask AI change is up to, and what it moved. */
+    public function askingStatus(Request $request, string $game): JsonResponse
+    {
+        $game = $this->owned($request, $game);
+        $status = EditGame::statusOf($game->id);
+        $unit = $game->creditUnit;
+
+        return response()->json([
+            'status' => $status['status'],
+            'message' => $status['message'] ?? null,
+            // Which entries the model rewrote, so the editor can point at
+            // them: an edit nobody can find is an edit nobody reviews.
+            'changed' => $status['changed'] ?? [],
+            'renamed' => $status['renamed'] ?? [],
+            'removed' => $status['removed'] ?? 0,
+            'final_changed' => $status['final_changed'] ?? false,
+            // An edit is what makes a claimed pack's printed cards out of
+            // date, so the page learns it without a reload.
+            'cards_worth_printing' => $game->cardsAreWorthPrinting(),
+            'ai_percent_used' => $this->meterFor($game),
+        ]);
+    }
+
+    public function writingStatus(Request $request, string $game): JsonResponse
+    {
+        $game = $this->owned($request, $game);
+        $status = WriteGame::statusOf($game->id);
+        $unit = $game->creditUnit;
+
+        return response()->json([
+            'status' => $status['status'],
+            'message' => $status['message'] ?? null,
+            // Only once most of it is gone: a teacher who never approaches the
+            // limit never learns there is one.
+            'ai_percent_used' => $this->meterFor($game),
+        ]);
+    }
+
+    /**
+     * Publish: the moment a draft becomes the thing the teacher paid for.
+     *
+     * Structural checks only — enough words for a card, every square answered.
+     * How well it is written stays the teacher's business, but a game that
+     * cannot be played would be discovered in front of a class.
+     */
+    public function publish(Request $request, string $game): RedirectResponse
+    {
+        $game = $this->draft($request, $game);
+        $problems = $game->reasonsItCannotBePlayed();
+
+        if ($problems !== []) {
+            return back()->withErrors(['publish' => $problems]);
+        }
+
+        $game->publish();
+
+        return redirect()->route('my-games')
+            ->with('status', "\"{$game->theme}\" is ready to play.");
+    }
+
+    /** A game of this teacher's that is still a draft. */
+    private function draft(Request $request, string $id): TeacherGame
+    {
+        $game = $this->playable($request, $id);
+
+        abort_if($game->isPublished(), 403, 'This game has already been published.');
+
+        return $game;
+    }
+
     public function edit(Request $request, string $game): View
     {
-        return view('games.edit', ['game' => $this->playable($request, $game)]);
+        $game = $this->playable($request, $game);
+
+        return view('games.edit', [
+            'game' => $game,
+            // On the page itself, not only in the reply to an ask: a teacher
+            // who comes back the next day to a credit with no AI left should
+            // meet a closed box that says so, rather than an open one that
+            // takes their request and refuses it.
+            'aiPercentUsed' => $this->meterFor($game),
+            // A claimed game's printed cards are right until a word changes,
+            // so the download only appears once it has something new to give.
+            'cardsWorthPrinting' => $game->cardsAreWorthPrinting(),
+            // The quiz's equivalent, and a stricter rule: never for a claimed
+            // pack, which came with one (answerSheetIsAvailable).
+            'answerSheetAvailable' => $game->answerSheetIsAvailable(),
+        ]);
+    }
+
+    /**
+     * How much of this credit's AI is gone, or null while it does not matter.
+     *
+     * Below the threshold this returns nothing at all, so a teacher who never
+     * approaches the limit never learns there is one.
+     */
+    private function meterFor(TeacherGame $game): ?int
+    {
+        $unit = $game->creditUnit;
+
+        return $unit && $unit->aiPercentUsed() >= (int) config('ai.meter_from_percent')
+            ? $unit->aiPercentUsed()
+            : null;
     }
 
     /**
@@ -147,18 +470,34 @@ class TeacherGameController extends Controller
 
     public function play(Request $request, string $game): Response
     {
-        $game = $this->playable($request, $game);
+        $game = $this->published($request, $game);
 
-        return response(RoomController::shell(route('my-games.payload', $game)))
+        /* Whether this game was BOUGHT, which decides one thing on the screen
+         * at the end: the ask to review it on TpT. A game made here with a
+         * credit was never sold on TpT, so asking its author to review their
+         * purchase of it is the same mistake the demo room already guards
+         * against. A claimed pack is a real purchase and keeps the ask.
+         */
+        $shell = RoomController::shell(route('my-games.payload', $game), [
+            'data-made-here' => $game->source_code === null ? '1' : '',
+        ]);
+
+        return response($shell)
             ->header('Content-Type', 'text/html; charset=UTF-8')
             ->header('Cache-Control', 'private, no-store');
     }
 
     /**
-     * The game's data, for the shell.
+     * The game's data, for the shell and for the editor.
      *
      * Not cached anywhere, unlike a room's: a teacher who edits a clue and
      * presses play expects the clue they just typed.
+     *
+     * Owned rather than published, because the editor reads this too — and a
+     * draft is what an editor is usually open on. Publishing gates the PAGES
+     * it unlocks (play, the cards); it has no business gating a teacher's own
+     * data. Gating it here left every draft with an editor that could not load
+     * the game it was editing.
      */
     public function payload(Request $request, string $game): Response
     {
@@ -179,7 +518,7 @@ class TeacherGameController extends Controller
      */
     public function cards(Request $request, string $game): JsonResponse
     {
-        $game = $this->playable($request, $game);
+        $game = $this->published($request, $game);
         $size = (int) $request->input('size');
         $stamp = $this->cardsStamp($game, $size);
 
@@ -199,7 +538,7 @@ class TeacherGameController extends Controller
     /** Whether the cards asked for have finished rendering. */
     public function cardsStatus(Request $request, string $game, int $size): JsonResponse
     {
-        $game = $this->playable($request, $game);
+        $game = $this->published($request, $game);
         $stamp = $this->cardsStamp($game, $size);
 
         $ready = $stamp !== null && Storage::disk('local')->exists(RenderBingoCards::pathFor($game->id, $size, $stamp));
@@ -210,9 +549,86 @@ class TeacherGameController extends Controller
         ]);
     }
 
+    /**
+     * The team answer sheet: the quiz's equivalent of the bingo cards.
+     *
+     * Only for a game made here — a claimed pack came with one, and this one
+     * is blank, so there is nothing better to give (answerSheetIsAvailable).
+     */
+    public function answerSheet(Request $request, string $game): JsonResponse
+    {
+        $game = $this->published($request, $game);
+        $stamp = $this->answerSheetStamp($game);
+
+        if ($stamp === null) {
+            return response()->json(['message' => 'This game has no board to make a sheet from.'], 422);
+        }
+
+        if (Storage::disk('local')->exists(RenderAnswerSheet::pathFor($game->id, $stamp))) {
+            return response()->json(['status' => 'ready', 'url' => route('my-games.answer-sheet.download', $game)]);
+        }
+
+        RenderAnswerSheet::dispatch($game->id, $stamp);
+
+        return response()->json(['status' => 'working'], 202);
+    }
+
+    public function answerSheetStatus(Request $request, string $game): JsonResponse
+    {
+        $game = $this->published($request, $game);
+        $stamp = $this->answerSheetStamp($game);
+        $ready = $stamp !== null && Storage::disk('local')->exists(RenderAnswerSheet::pathFor($game->id, $stamp));
+
+        return response()->json([
+            'status' => $ready ? 'ready' : 'working',
+            'url' => $ready ? route('my-games.answer-sheet.download', $game) : null,
+        ]);
+    }
+
+    public function answerSheetDownload(Request $request, string $game): Response
+    {
+        $game = $this->published($request, $game);
+        $stamp = $this->answerSheetStamp($game);
+        abort_if($stamp === null, 404);
+
+        $path = RenderAnswerSheet::pathFor($game->id, $stamp);
+        abort_unless(Storage::disk('local')->exists($path), 404);
+
+        return Storage::disk('local')->download($path, Str::slug($game->theme ?: 'quiz').'-answer-sheet.pdf');
+    }
+
+    /**
+     * What the sheet was made from, so an edited board makes a new file rather
+     * than serving yesterday's.
+     *
+     * Only the headings, the money and whether there is a final, because that
+     * is all the sheet prints. Rewriting a clue leaves every team's page
+     * identical, so it must not cost a render.
+     */
+    private function answerSheetStamp(TeacherGame $game): ?string
+    {
+        if (! $game->answerSheetIsAvailable()) {
+            return null;
+        }
+
+        $board = $game->data()['games']['jeopardy'] ?? [];
+
+        $shape = array_map(fn (array $category): array => [
+            $category['name'] ?? '',
+            array_map(fn (array $clue): mixed => $clue['value'] ?? null, array_filter($category['clues'] ?? [], 'is_array')),
+        ], array_filter($board['categories'] ?? [], 'is_array'));
+
+        return substr(sha1((string) json_encode([
+            $game->theme,
+            $shape,
+            ! empty($board['final']['prompt']),
+            PrintablePdf::templateStamp('games.answer-sheet'),
+        ])), 0, 16);
+    }
+
     public function cardsDownload(Request $request, string $game, int $size): Response
     {
-        $game = $this->playable($request, $game);
+        $game = $this->published($request, $game);
         $stamp = $this->cardsStamp($game, $size);
         abort_if($stamp === null, 404);
 
@@ -241,16 +657,29 @@ class TeacherGameController extends Controller
             return null;
         }
 
-        return substr(sha1(json_encode([$game->theme, $cards])), 0, 16);
+        // The template too: a change to how a card is drawn must reach a
+        // teacher who already downloaded one. See PrintablePdf::templateStamp.
+        return substr(sha1((string) json_encode([
+            $game->theme, $cards, PrintablePdf::templateStamp('games.cards'),
+        ])), 0, 16);
     }
 
     public function destroy(Request $request, string $game): RedirectResponse
     {
         $game = $this->owned($request, $game);
+        $wasDraft = ! $game->isPublished();
+
+        // A draft hands its credit back; a published game keeps it spent,
+        // because the teacher has had the thing they bought.
+        if ($wasDraft) {
+            $game->creditUnit?->release();
+        }
+
         $game->delete();
 
-        return redirect()->route('my-games')
-            ->with('status', "\"{$game->theme}\" was removed from your games.");
+        return redirect()->route('my-games')->with('status', $wasDraft
+            ? "\"{$game->theme}\" was deleted and your credit is free again."
+            : "\"{$game->theme}\" was removed from your games.");
     }
 
     private function owned(Request $request, string $id): TeacherGame
@@ -270,6 +699,19 @@ class TeacherGameController extends Controller
         $game = $this->owned($request, $id);
 
         abort_if($game->isLocked(), 403, 'This game is locked because its purchase was refunded.');
+
+        return $game;
+    }
+
+    /**
+     * A game that has been published: playing it, its data and its printables
+     * are what publishing unlocks. Editing works on a draft too.
+     */
+    private function published(Request $request, string $id): TeacherGame
+    {
+        $game = $this->playable($request, $id);
+
+        abort_if(! $game->isPublished(), 403, 'This game is still a draft. Publish it to play or print it.');
 
         return $game;
     }

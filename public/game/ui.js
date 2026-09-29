@@ -876,6 +876,26 @@
     return link;
   }
 
+  /* The way back, on a teacher's own game.
+   *
+   * The exact inverse of customizeGame: that one is for a room a teacher
+   * bought and points INTO the account, this one is for a game already in the
+   * account and points back at the list. Without it the only link on a
+   * teacher's own game is the store — the wrong direction for someone who has
+   * already bought — and the way home is the browser's back button.
+   *
+   * Same rule as the two links beside it: the screens either side of a game,
+   * never during one. Same tab, unlike the store link: going back to your own
+   * list is leaving, not a detour.
+   */
+  function backToMyGames(room) {
+    if (!room || !room.own) return null;
+
+    const link = el('a', 'more-games', '← Back to my games');
+    link.href = '/my-games';
+    return link;
+  }
+
   /* Where a buyer leaves feedback: every purchase on one page, each with its own
    * Provide Feedback button, and the sign-in sends them straight back to it.
    *
@@ -897,10 +917,15 @@
    * Never on the demo room: nobody playing the demo has bought anything, and
    * asking them to review a purchase they never made reads as a scam. They get
    * the store link on its own, which is what the demo is for anyway.
+   *
+   * Never on a game the teacher MADE here either, for exactly the same reason
+   * — they wrote it with a credit, there is no TpT purchase behind it, and the
+   * ask would be for a review of their own work. A game they CLAIMED from a
+   * pack keeps the ask: that one really was bought.
    */
   function afterGame(room) {
     const wrap = el('div', 'after-game');
-    if (!(room && room.demo)) {
+    if (!(room && (room.demo || room.madeHere))) {
       const ask = el('a', 'review-cta');
       ask.href = REVIEW_URL;
       ask.target = '_blank';
@@ -915,6 +940,9 @@
       wrap.append(ask);
     }
     wrap.append(moreGames());
+    const back = backToMyGames(room);
+    if (back) wrap.append(back);
+
     return wrap;
   }
 
@@ -922,7 +950,7 @@
     el, fitText, topBar,
     hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, englishToggle,
     displayFace, openVocab, reviewButton, openHowTo, howToButton,
-    brandMark, moreGames, customizeGame, afterGame, MORE_GAMES_URL,
+    brandMark, moreGames, customizeGame, backToMyGames, afterGame, MORE_GAMES_URL,
     DEFAULT_RATE, RATES, normalizeRate, rateRow,
   };
 })();

@@ -459,6 +459,86 @@ wrong, so a pricing page that looks right proves nothing about the checkout.
   Sandbox refunds approve themselves about ten minutes after they are asked
   for, which is the wait before a locked game proves the refund path works.
 
+### Ask AI — built
+
+A box under the words and another under the board, not a chat. The credit's AI
+budget exists so a teacher can keep going until the game suits their class, and
+a teacher who dislikes three of the thirty words should be able to say so
+rather than regenerate and lose the twenty-seven they were happy with.
+
+Why a box beat a chat, having considered both:
+
+- **Context is better, not worse.** Every request carries the game exactly as
+  it stands — the bank numbered, the board category by category — so the model
+  sees what is on the teacher's screen, hand edits included. A chat carries its
+  own memory of the game, which goes stale the moment a row is edited by hand.
+- **It is cheaper per go.** A chat re-sends its history, including every
+  earlier state of the bank, so the tenth tweak costs several times the first.
+  Stateless edits cost the same each time, and the budget buys more of them.
+- **The teacher can see what moved.** `applyItemEdit` returns which entries
+  were rewritten and the editor outlines them. A chat returns a paragraph
+  claiming what it did. Before printing 48 cards, an outline beats a claim.
+- **It cannot quietly reword the rest.** Changes come back addressed by number
+  and are merged into the teacher's own copy, so the untouched words are
+  untouched by construction rather than by the model's restraint.
+
+The one thing a chat would have given is a follow-up that refers back — "I
+still don't like it, change it again", where by then the word being complained
+about is already out of the bank and "it" points at nothing. That is handled by
+`EditGame::historyOf`: the last three `{request, note}` pairs travel with the
+next prompt. Bounded on purpose, so the tenth tweak costs what the first did.
+The note is asked to name what changed *and what it used to be* ("Changed #12
+from 'el granjero' to 'el ratón'"), which is what stops the next go handing
+back a word the teacher has already turned down. Verified end to end against
+the live model: `el granjero` → `el ratón` → (a bare "change it again") →
+`las botas`, with the other twenty-nine words untouched.
+
+Mechanically: `POST /my-games/{game}/ask` queues `EditGame`, the page polls
+`/asking`, and both the prompt and the merge come from the builder through
+`App\Ai\Builder` → `resources/scripts/game-ai.cjs`. An edit is allowed on a
+published game as well as a draft — a teacher who finds a bad clue the night
+before a lesson should be able to fix it — and because bingo cards are dealt
+*from* the words, a published game has them re-dealt at once
+(`TeacherGame::dealCardsNow`), or the next press of "Print the cards" would
+render a set with nothing on it.
+
+### What gets a PDF, and what does not — built
+
+A TpT pack ships seven or so printed pages. A game made here offers two: the
+bingo cards, and the quiz's team answer sheet. The line between them is not
+"cards vs everything else", it is:
+
+> **A blank page students physically hold gets a PDF. A page that reproduces
+> the pack's writing does not.**
+
+By that rule the caller sheet, the teacher script and the printed board stay
+out. They are the no-projector fallback for a product sold to people who may
+not use the website — and a teacher who *built* their game here is using the
+website. The Play Online sheet is meaningless without a room code, How to Play
+is replaced by the in-game ❓ panel, and the score sheet contradicts the site,
+which keeps score on screen. It is also the cheap side of the line: both sheets
+we do render need the payload's structure only, not `brand.js` page furniture,
+so neither is a second home for the builder's page pipeline.
+
+The two are offered on **different** rules, and the difference is what is
+printed on them:
+
+| | Made here | Claimed from TpT |
+| --- | --- | --- |
+| Bingo cards | Always — they exist nowhere else | Once a word changes: the words are printed ON the card, so the set in their download is now wrong |
+| Team answer sheet | Always | **Never.** The sheet is blank, so a renamed category does not make their copy wrong |
+
+`TeacherGame::cardsAreWorthPrinting()` and `answerSheetIsAvailable()` hold those
+two rules. The cards compare against the room they were claimed from rather
+than tracking a flag, so changing a word back correctly stops offering them.
+
+The answer sheet is a port of the builder's `jeopardyHoja.html`, and keeps its
+two deliberate blanks: no clue text, and **no final category** — that is
+announced when the board is empty, and a team reading it off their own sheet
+all game has had the one thing the bet is meant to turn on. It is not a
+convenience page either: the final wager asks every team to write a bet down
+before the clue is shown, so without it that round runs on scrap paper.
+
 ### Also needed
 
 - Legal pages: terms, privacy policy, refund policy, a public pricing page —
@@ -480,3 +560,33 @@ wrong, so a pricing page that looks right proves nothing about the checkout.
 - Duplicate a game, share a game with a colleague who also has an account.
 - Offline play for teacher games (service worker scope).
 - More kinds of game on the same editor.
+
+### Letting a substitute run the game
+
+A teacher is out and wants a sub — or a colleague — to play their game with
+the class, without handing over an account password. Today there is no way
+to do it: a teacher's game is reachable only from their own login.
+
+The shape that fits what teachers already know is a **short-lived play code**,
+the same mental model as the codes printed in the TpT packs. Tap "Share for a
+sub", get a code, the sub enters it and plays.
+
+**The trap to design around first, not bolt on afterwards.** `claim()` looks up
+`Room::find($code)`. If a shared game were published as a Room to give it a
+code, another teacher could claim it into their own account — a free game, and
+the sharing feature becomes a free-games pipeline. A share code therefore has
+to be a different kind of object from a room, or be explicitly unclaimable in
+the way `site.unclaimable_codes` makes the demo games unclaimable.
+
+Scope it narrowly:
+
+- **Play only.** No editor, no printables, no claiming. Seeing the answers is
+  not the leak — that is true of every TpT code already sold.
+- **Expires**, a week or so, which covers an absence.
+- **Revocable**, and **one active share per game**, so nobody mints dozens.
+
+Worth being honest about how much this protects: a teacher who wants to share
+can already project their screen or hand over a laptop, and TpT codes circulate
+freely by design. The realistic risk is a link posted to a teacher group, and
+expiry plus play-only handles that — anyone who wants to *keep* the game still
+needs credits.

@@ -102,6 +102,66 @@ class ContactFormTest extends TestCase
         $this->assertSame(0, ContactMessage::count());
     }
 
+    /**
+     * A double-tap sent the message twice — two rows and two emails. The
+     * button disables itself, but that is gone on a refresh onto the POST or
+     * in a second tab, so the same rendering of the form may only send once.
+     */
+    public function test_the_same_press_twice_sends_one_message(): void
+    {
+        Mail::fake();
+        config(['site.contact_inbox' => 'inbox@example.com']);
+        $started = $this->startedSecondsAgo(60);
+
+        // Both are thanked: a teacher whose finger bounced has done nothing
+        // wrong and should not be told off for it.
+        $this->send(['started' => $started])->assertSessionHas('contact_sent', true);
+        $this->send(['started' => $started])->assertSessionHas('contact_sent', true);
+
+        $this->assertSame(1, ContactMessage::count());
+        Mail::assertSent(ContactMessageReceived::class, 1);
+    }
+
+    public function test_a_second_message_from_a_freshly_shown_form_still_sends(): void
+    {
+        Mail::fake();
+
+        // A successful send re-renders the form with a new start token, so
+        // this is a teacher writing again, not a repeat.
+        $this->send(['message' => 'The first thing I wanted to ask about.']);
+        $this->send(['message' => 'And a second, separate question entirely.']);
+
+        $this->assertSame(2, ContactMessage::count());
+    }
+
+    public function test_fixing_an_error_and_resending_still_sends(): void
+    {
+        Mail::fake();
+
+        // The form keeps its start token across a validation error, so the
+        // press is only claimed once the message is actually accepted.
+        $started = $this->startedSecondsAgo(60);
+
+        $this->send(['started' => $started, 'message' => ''])->assertSessionHasErrors('message');
+        $this->send(['started' => $started])->assertSessionHas('contact_sent', true);
+
+        $this->assertSame(1, ContactMessage::count());
+    }
+
+    public function test_a_repeat_of_a_held_message_is_not_saved_twice(): void
+    {
+        Mail::fake();
+        $started = $this->startedSecondsAgo(60);
+        $spammy = ['started' => $started, 'message' => 'See http://a.com and http://b.com and http://c.com now'];
+
+        $this->send($spammy);
+        $this->send($spammy);
+
+        // Held messages are kept for a look, so a repeat would be two of them.
+        $this->assertSame(1, ContactMessage::count());
+        Mail::assertNothingSent();
+    }
+
     public function test_a_post_that_never_ran_the_page_script_is_turned_back(): void
     {
         $this->send(['human' => ''])

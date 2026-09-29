@@ -84,8 +84,8 @@ class InternalPinAssetTest extends TestCase
         // Accents flattened, so the URL survives being decoded one time too
         // many somewhere between here and Pinterest.
         $this->assertMatchesRegularExpression('/^el-dia-de-la-independencia-de-mexico-bingo-[0-9a-f]{8}\.png$/', $filename);
-        Storage::disk('public')->assertExists('tpt-pins/' . $filename);
-        $this->assertSame(Storage::disk('public')->url('tpt-pins/' . $filename), $response->json('url'));
+        Storage::disk('public')->assertExists('tpt-pins/'.$filename);
+        $this->assertSame(Storage::disk('public')->url('tpt-pins/'.$filename), $response->json('url'));
         $this->assertStringEndsWith('.png', $response->json('url'));
     }
 

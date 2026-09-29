@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\CreditEntry;
+use App\Models\CreditUnit;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\PendingRequest;
@@ -44,12 +45,13 @@ class PaddleSyncCommand extends Command
 
         $granted = $this->purchases($since, $pretend);
         $revoked = $this->refunds($pretend);
+        $restored = $this->missingUnits($pretend);
 
         $this->newLine();
         $this->line(match (true) {
-            $granted === 0 && $revoked === 0 => '  <fg=green>Nothing missing.</> Paddle and the ledger agree.',
-            $pretend => "  <fg=yellow>{$granted} purchase(s) and {$revoked} refund(s) are missing.</> Run again without --pretend.",
-            default => "  <fg=cyan>Added {$granted} purchase(s) and {$revoked} refund(s).</>",
+            $granted === 0 && $revoked === 0 && $restored === 0 => '  <fg=green>Nothing missing.</> Paddle and the ledger agree.',
+            $pretend => "  <fg=yellow>{$granted} purchase(s), {$revoked} refund(s) and {$restored} credit(s) are missing.</> Run again without --pretend.",
+            default => "  <fg=cyan>Added {$granted} purchase(s), {$revoked} refund(s) and {$restored} credit(s).</>",
         });
 
         return self::SUCCESS;
@@ -127,6 +129,46 @@ class PaddleSyncCommand extends Command
         }
 
         return $taken;
+    }
+
+    /**
+     * Credits a teacher paid for but cannot spend.
+     *
+     * The ledger is the record of money and the units are the thing a teacher
+     * spends; a purchase with fewer units than it granted is a teacher who
+     * paid and got nothing. Refunded purchases are left alone — their credits
+     * are missing on purpose.
+     */
+    private function missingUnits(bool $pretend): int
+    {
+        $restored = 0;
+
+        $entries = CreditEntry::whereIn('reason', [CreditEntry::PURCHASE, CreditEntry::ADMIN])
+            ->where('delta', '>', 0)
+            ->whereNull('refunded_at')
+            ->with('user')
+            ->get();
+
+        foreach ($entries as $entry) {
+            $have = CreditUnit::where('credit_entry_id', $entry->id)->count();
+            $short = $entry->delta - $have;
+
+            if ($short < 1 || $entry->user === null) {
+                continue;
+            }
+
+            $this->line("  <fg=yellow>missing credits</> {$entry->reference} → {$entry->user->email}, {$short} of {$entry->delta}");
+
+            if (! $pretend) {
+                foreach (range(1, $short) as $ignored) {
+                    $entry->user->creditUnits()->create(['credit_entry_id' => $entry->id]);
+                }
+            }
+
+            $restored += $short;
+        }
+
+        return $restored;
     }
 
     /**

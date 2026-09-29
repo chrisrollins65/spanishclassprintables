@@ -1,0 +1,6 @@
+{
+  "name": "builder-shared",
+  "type": "commonjs",
+  "private": true,
+  "_generated": "by the packet builder's scripts/sync-site-shared.js — do not edit"
+}
