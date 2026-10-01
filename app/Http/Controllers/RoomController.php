@@ -29,7 +29,7 @@ class RoomController extends Controller
     /** Room codes are printed and read aloud, so they stay short and unambiguous. */
     private const CODE_PATTERN = '/^[A-Z0-9]{4,8}$/';
 
-    /** Generous for a 96-card deck (~60KB) and still a hard stop on abuse. */
+    /** Generous for a 96-card deck (~32KB compact) and still a hard stop on abuse. */
     private const MAX_PAYLOAD_BYTES = 2_000_000;
 
     /**
@@ -161,7 +161,7 @@ class RoomController extends Controller
         $payload = $request->input('payload');
         abort_unless(is_array($payload), 422, 'Missing payload.');
 
-        $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         abort_if($json === false, 422, 'Payload is not encodable.');
         abort_if(strlen($json) > self::MAX_PAYLOAD_BYTES, 413, 'Payload too large.');
 
