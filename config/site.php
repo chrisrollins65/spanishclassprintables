@@ -47,6 +47,43 @@ return [
     )))),
 
     /*
+     * Who is behind the site, for the legal pages.
+     *
+     * Here rather than written into four Blade files, because it is the same
+     * handful of facts on every one of them and a business that moves would
+     * otherwise leave a stale address on whichever page nobody remembered.
+     *
+     * `trading_as` is the name the site uses everywhere — the brand. `name`
+     * is the person legally behind it, which Spain's LSSI (Ley 34/2002,
+     * art. 10) requires a commercial site to make findable along with the NIF
+     * and an address. Paddle is the merchant of record, so the seller in the
+     * purchase contract is Paddle and their details are on the invoice; this
+     * is the site-operator disclosure, which is ours and stays ours.
+     */
+    /* Shown on the legal pages. Bumped by hand when one of them changes in a
+     * way a reader should notice — a date that moves on every deploy tells
+     * them nothing. */
+    'legal_updated' => env('LEGAL_UPDATED', '29 September 2026'),
+
+    'legal' => [
+        'trading_as' => 'Spanish Class Printables',
+        'name' => env('LEGAL_NAME', 'Arantxa León'),
+        // Required by LSSI art. 10 alongside the name. Ask the gestor.
+        'nif' => env('LEGAL_NIF', ''),
+        'address' => [
+            'ORCA — Calle Gil-Vernet 54/55',
+            'Polígono Les Tàpies 1 #1181',
+            "43890 Hospitalet de l'Infant, Tarragona",
+            'Spain',
+        ],
+        'email' => env('LEGAL_EMAIL', 'ary@spanishclassprintables.com'),
+        'jurisdiction' => 'Spain',
+        // The window a teacher can change their mind in, and the line that
+        // decides it: AI that has already run has already cost us.
+        'refund_days' => (int) env('REFUND_DAYS', 14),
+    ],
+
+    /*
      * MailerLite's popup signup form, from the old subscribepage.io landing
      * page. The homepage only opens it; the form itself is edited in MailerLite.
      */

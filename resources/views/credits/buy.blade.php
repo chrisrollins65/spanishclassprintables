@@ -55,8 +55,14 @@
           </div>
         @endforeach
       </div>
+      {{-- The terms and the refund policy belong HERE, not only in the footer:
+           a consumer is entitled to them before they are bound, not after they
+           have gone looking. This is the last screen before the checkout. --}}
       <p class="hint" style="margin-top:14px">
-        Paddle handles the payment and the receipt, and any tax due where you are. Credits never expire.
+        Paddle handles the payment and the receipt, and any tax due where you are. Credits never
+        expire. Buying means you accept our <a href="{{ route('terms') }}">terms</a>; unspent
+        credits can be refunded within {{ config('site.legal.refund_days') }} days, as set out in
+        our <a href="{{ route('refunds') }}">refund policy</a>.
       </p>
     @endif
   </div>

@@ -145,6 +145,14 @@
 
   /* ---- Sections ---- */
   .section { padding-block: clamp(56px, 8vw, 96px); }
+  .make { background: var(--card); border-block: 1px solid var(--edge); }
+  .make-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 8px; }
+  @media (max-width: 760px) { .make-grid { grid-template-columns: 1fr; } }
+  .make-step { background: var(--paper); border: 1px solid var(--edge); border-radius: 16px; padding: 22px; }
+  .make-step h3 { font-size: 1.05rem; }
+  .make-step p { color: var(--muted); margin-top: 8px; font-size: .97rem; }
+  .make-cta { margin-top: 34px; }
+  .make-note { color: var(--muted); font-size: .95rem; margin-top: 14px; }
   .section-head { max-width: 720px; margin: 0 auto 40px; text-align: center; }
   .section-head p { color: var(--muted); margin-top: 12px; font-size: 1.1rem; }
   .kicker { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; font-size: .8rem; color: var(--teal-dark); margin-bottom: 10px; }
@@ -232,6 +240,7 @@
     </a>
     <nav class="nav" aria-label="Main">
       <a href="#play">Play a game</a>
+      <a href="#make">Make a game</a>
       <a href="#review">Leave a review</a>
       <a href="#contact">Contact</a>
       {{-- A teacher who has customized a game comes back here for it, so the
@@ -382,6 +391,53 @@
     </div>
   </section>
 
+  {{-- The only place on this site that tells a visitor they can MAKE a game.
+       Until this existed the product was reachable by one footer link, so
+       nobody arriving here knew it was for sale.
+
+       Placed after the printables, not before: most people land here from a
+       code printed on a packet they already bought, and the first thing they
+       came for is the game. This is the upsell, so it follows. --}}
+  <section id="make" class="section make">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">New</span>
+        <h2>Make your own game, in about a minute</h2>
+        <p>
+          Type a topic — <em>la ropa</em>, farm animals, the preterite — and get a bingo pack or a
+          team quiz written for your class. Change any word, clue or answer, then play it from this
+          website and print what your students need.
+        </p>
+      </div>
+
+      <div class="make-grid">
+        <div class="make-step">
+          <h3>1. Say what it is about</h3>
+          <p>A topic your class is studying. AI writes the first draft — thirty words with clues,
+            or five categories of questions.</p>
+        </div>
+        <div class="make-step">
+          <h3>2. Make it yours</h3>
+          <p>Nothing is fixed. Rewrite anything by hand, or ask for a change in plain English:
+            <em>“numbers 3, 7 and 12 are too hard for my class.”</em></p>
+        </div>
+        <div class="make-step">
+          <h3>3. Play it and print it</h3>
+          <p>The site reads the clues aloud in Spanish and keeps score. Bingo cards and team
+            answer sheets print free, as often as you like.</p>
+        </div>
+      </div>
+
+      <div class="center make-cta">
+        <a class="btn btn-primary" href="{{ route('pricing') }}">See what it costs →</a>
+        <p class="make-note">
+          $4.50 a game, or ten for $30. No subscription.
+          Already bought a game on TpT? <a href="#play">Add it with its code</a> and edit it free.
+        </p>
+      </div>
+    </div>
+  </section>
+
   <section class="newsletter">
     <div class="wrap">
       <div class="card">
@@ -502,9 +558,13 @@
     <small>© {{ date('Y') }} Spanish Class Printables</small>
     <nav aria-label="Footer">
       <a href="#play">Play a game</a>
+      <a href="{{ route('pricing') }}">Pricing</a>
       <a href="{{ config('site.review_url') }}" target="_blank" rel="noopener">Leave a review</a>
       <a href="{{ config('site.store_url') }}" target="_blank" rel="noopener">Our TpT store</a>
       <a href="#contact">Contact</a>
+      <a href="{{ route('terms') }}">Terms</a>
+      <a href="{{ route('privacy') }}">Privacy</a>
+      <a href="{{ route('refunds') }}">Refunds</a>
     </nav>
   </div>
 </footer>

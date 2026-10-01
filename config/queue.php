@@ -40,7 +40,17 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            /* Longer than the longest job's own timeout, and deliberately so.
+             *
+             * retry_after is how long the queue waits before deciding a job
+             * has died and handing it to another worker. Below a job's
+             * timeout it fires while the job is STILL RUNNING, and the work
+             * is done twice — for WriteGame that is a second model call and
+             * a second charge against the teacher's credit. The default 90
+             * sat under every job here (WriteGame 400, EditGame 240, both
+             * renders 120). QueueTimeoutTest holds the two in order.
+             */
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 600),
             'after_commit' => false,
         ],
 

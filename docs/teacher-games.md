@@ -539,13 +539,53 @@ all game has had the one thing the bet is meant to turn on. It is not a
 convenience page either: the final wager asks every team to write a bet down
 before the clue is shown, so without it that round runs on scrap paper.
 
-### Also needed
+### The public face — built
 
-- Legal pages: terms, privacy policy, refund policy, a public pricing page —
-  Paddle's review checks the live site for them, so they go up before applying.
-- The checkout itself (Paddle.js over our own page), the sales page, and
-  spending a credit to create a game.
-- A model choice for the site's generation: cost per game, not only quality.
+- `/pricing`, `/terms`, `/privacy`, `/refunds`, linked from both footers.
+  Paddle's review checks the live site for these before approving an account,
+  so they go up before applying. They share one layout, and the operator's
+  details come from `config('site.legal')` rather than being written into four
+  files — a move changes one line.
+- The homepage's **Make a game** section, which is the only thing on the site
+  that tells a visitor the product exists. Before it, the pricing page was
+  reachable by one footer link and nothing else: everything was built and
+  nobody could find it.
+- The terms and the refund policy are linked from the **buy page** as well as
+  the footer. That is the placement that matters — a consumer is entitled to
+  them before they are bound, and someone who cannot find how to ask for a
+  refund files a chargeback instead, which costs more than the refund and
+  counts against us with Paddle.
+
+Naming the operator is not optional. Spain's LSSI (Ley 34/2002, art. 10) wants
+a commercial site to make its operator findable, so one block at the foot of
+each document does that and the brand is used everywhere else. The NIF is left
+out deliberately — for an autónomo it is essentially a personal ID number, and
+`legal-details.blade.php` renders nothing at all rather than a gap when
+`LEGAL_NIF` is unset.
+
+### Before it can take money
+
+- **Paddle dashboard, by hand**: domain approval, the default payment link, the
+  client-side token, and an API key for the app with exactly
+  `Transactions: Read`, `Adjustments: Read`, `Adjustments: Write` — the only
+  three the code uses. The webhook controller verifies an HMAC and never calls
+  the API; `paddle:sync` reads; the admin Refund button writes an adjustment.
+- **Ansible first, then deploy.** The playbook installs Node 22, Chrome, the
+  fonts Chrome draws Spanish with, and the supervisor worker. A deploy without
+  it has no PDFs and no AI.
+- **Production `.env`**: `QUEUE_CONNECTION=database`,
+  `DB_QUEUE_RETRY_AFTER=600`, `BROWSERSHOT_CHROME_PATH=/usr/bin/google-chrome`,
+  `BROWSERSHOT_NO_SANDBOX=true`, `CARDS_NODE_BINARY=/usr/bin/node`, the AI keys,
+  and the live Paddle ids. `EnvExampleTest` keeps `.env.example` honest about
+  what this app reads, so that file is the list.
+- **One real purchase, end to end**, before telling anyone: buy a single credit,
+  make a game, print it, then refund it from the admin screen. That is the only
+  thing that exercises the webhook, the credit grant, the queue worker, Chrome
+  and `revokeCredits` together.
+
+A model choice for the site's generation is settled: Gemini 3 Flash writes,
+GPT-5.4 is the fallback, and the cost is measured from token usage rather than
+assumed (`App\Ai\Writer`).
 
 ### Open questions (business, not code)
 

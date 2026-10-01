@@ -20,6 +20,15 @@ Route::get('/', fn () => view('home', [
     'turnstile' => ContactController::turnstileEnabled(),
 ]));
 
+/*
+ * The public pages a buyer — and Paddle's reviewer, before they approve the
+ * account — has to be able to read without logging in.
+ */
+Route::view('/pricing', 'pages.pricing')->name('pricing');
+Route::view('/terms', 'pages.terms')->name('terms');
+Route::view('/privacy', 'pages.privacy')->name('privacy');
+Route::view('/refunds', 'pages.refunds')->name('refunds');
+
 // A teacher has no reason to send more than a couple; this only stops floods.
 Route::post('/contact', [ContactController::class, 'store'])
     ->middleware('throttle:5,10');

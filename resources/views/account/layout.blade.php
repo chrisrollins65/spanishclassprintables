@@ -106,6 +106,7 @@
 
   footer { color: var(--muted); font-size: .9rem; padding-block: 24px; text-align: center; }
   footer a { color: var(--muted); }
+  footer nav { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
   @stack('styles')
 </style>
 </head>
@@ -142,6 +143,12 @@
 
 <footer>
   <a href="/">spanishclassprintables.com</a>
+  <nav aria-label="Legal">
+    <a href="{{ route('pricing') }}">Pricing</a>
+    <a href="{{ route('terms') }}">Terms</a>
+    <a href="{{ route('privacy') }}">Privacy</a>
+    <a href="{{ route('refunds') }}">Refunds</a>
+  </nav>
 </footer>
 
 {{-- Stops the second half of a double-tap posting a form twice. The courtesy
