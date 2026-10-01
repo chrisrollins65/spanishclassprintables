@@ -1,7 +1,7 @@
 @extends('pages.layout')
 
 @section('title', 'Pricing')
-@section('description', 'One credit makes one Spanish classroom game — a bingo pack or a team quiz — yours to edit, play and print forever. $4.50 each, or 10 for $30.')
+@section('description', 'One credit makes one Spanish classroom game — a bingo pack or a Jeopardy-style team quiz — yours to edit, play and print forever. $4.50 each, or 10 for $30.')
 
 @push('styles')
   .tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 26px; }
@@ -13,6 +13,14 @@
   .flag { position: absolute; top: -12px; right: 18px; background: var(--gold); color: #4A3200;
           font: 800 .72rem 'Nunito', sans-serif; text-transform: uppercase; letter-spacing: .06em;
           border-radius: 999px; padding: 5px 12px; }
+  /* The two games, side by side. Same grid as the tiers so the page has one
+     two-column rhythm rather than two. */
+  .kinds { margin-top: 38px; }
+  .kind h3 { margin-top: 0; font-size: 1.25rem; }
+  .kind h3 .also { font: 600 .9rem 'Nunito', sans-serif; color: var(--muted); }
+  .kind p { color: var(--muted); }
+  .try { margin-top: 16px; }
+  .try a { font-weight: 700; }
   .what { margin-top: 34px; }
   .what ul { list-style: none; padding: 0; }
   .what li { padding-left: 28px; position: relative; margin-top: 10px; }
@@ -26,9 +34,20 @@
 <div class="prose">
   <h1>Pricing</h1>
   <p class="lead">
-    One credit makes one game — a bingo pack or a team quiz — that is yours to edit, play and
-    print forever, as many times as you want.
+    One credit makes one game — a bingo pack or a Jeopardy-style team quiz — that is yours to
+    edit, play and print forever, as many times as you want.
   </p>
+  {{-- The demo before the price. Nobody can tell from two words what either
+       game is like, and the demo is the only answer that costs us nothing and
+       them no account. Guarded because an environment with no demo published
+       must not link a room that 404s. --}}
+  @if (config('site.demo_room_code'))
+    <p class="try">
+      Not sure what they are like?
+      <a href="/j/{{ config('site.demo_room_code') }}">Try the demo</a> — both games, no
+      account, nothing to buy.
+    </p>
+  @endif
 </div>
 
 <div class="tiers">
@@ -45,6 +64,28 @@
     <div class="price">$30</div>
     <p class="per">Ten games — $3 each.</p>
     <a class="btn btn-primary" href="{{ route('credits') }}">Buy ten credits</a>
+  </div>
+</div>
+
+<div class="prose kinds">
+  <h2>The two games</h2>
+  <p>Pick one when you make the game. Both are played from this website, in Spanish, and both
+    print what your students write on.</p>
+</div>
+
+<div class="tiers">
+  <div class="card kind">
+    <h3>🎲 Bingo</h3>
+    <p>Thirty words. The website gives a clue in Spanish — a description, or a sentence with the
+      word missing — never the word itself, so your students have to work out which one it is and
+      mark it. Forty-eight different cards print free, in 4&times;4 and 3&times;3.</p>
+  </div>
+
+  <div class="card kind">
+    <h3>🏆 Team quiz <span class="also">(Jeopardy-style)</span></h3>
+    <p>Five categories, five clues each, on a board teams pick from for points. The website reads
+      each clue aloud and keeps score, one hidden square is worth double, and the board ends on a
+      final clue every team bets on. Team answer sheets print free.</p>
   </div>
 </div>
 

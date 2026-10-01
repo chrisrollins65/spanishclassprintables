@@ -25,7 +25,21 @@
 <div class="wrap narrow">
   <div class="card accent">
     <h1>Credits</h1>
-    <p class="lead">One credit makes one game — a bingo pack or a team quiz — that is yours to edit, play and print forever, as many times as you want.</p>
+    <p class="lead">One credit makes one game — a bingo pack or a Jeopardy-style team quiz — that is yours to edit, play and print forever, as many times as you want.</p>
+    {{-- What the two games are, on the last screen before the checkout. A
+         teacher can reach this page without ever passing /pricing (the header
+         links straight here once they have an account), so the one sentence
+         above was all some buyers had to go on. --}}
+    <p class="hint" style="margin-top:12px">
+      <strong>Bingo:</strong> thirty words, clued in Spanish, on forty-eight different printable
+      cards. <strong>Team quiz:</strong> five categories of clues for teams, read aloud and scored
+      by the website, ending on a final wager.
+      @if (config('site.demo_room_code'))
+        <a href="/j/{{ config('site.demo_room_code') }}">Try them both free</a> before you buy.
+      @else
+        <a href="{{ route('pricing') }}">More about both games</a>.
+      @endif
+    </p>
 
     <p class="balance" id="balance">{{ $credits }}</p>
     <p class="hint">{{ $credits === 1 ? 'credit' : 'credits' }} on your account</p>

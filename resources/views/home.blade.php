@@ -151,7 +151,10 @@
   .make-step { background: var(--paper); border: 1px solid var(--edge); border-radius: 16px; padding: 22px; }
   .make-step h3 { font-size: 1.05rem; }
   .make-step p { color: var(--muted); margin-top: 8px; font-size: .97rem; }
-  .make-cta { margin-top: 34px; }
+  /* Two buttons now (price and demo), so lay them out rather than leaning on
+     the single inline space between them. */
+  .make-cta { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .make-cta .make-note { flex-basis: 100%; }
   .make-note { color: var(--muted); font-size: .95rem; margin-top: 14px; }
   .section-head { max-width: 720px; margin: 0 auto 40px; text-align: center; }
   .section-head p { color: var(--muted); margin-top: 12px; font-size: 1.1rem; }
@@ -292,7 +295,7 @@
         <ul class="play-steps">
           <li><span class="ico" aria-hidden="true">📄</span><span>Find the code on your <strong>Teacher Script</strong> or <strong>Caller Sheet</strong> — or just scan its QR code.</span></li>
           <li><span class="ico" aria-hidden="true">📽️</span><span>Put this page on your projector or smartboard.</span></li>
-          <li><span class="ico" aria-hidden="true">🎉</span><span>Play team quiz or bingo. The site keeps score, reads clues aloud and checks the cards.</span></li>
+          <li><span class="ico" aria-hidden="true">🎉</span><span>Play bingo or the Jeopardy-style team quiz. The site keeps score, reads clues aloud and checks the cards.</span></li>
         </ul>
 
         <p class="play-foot">
@@ -381,7 +384,7 @@
         <li>🔎 Word searches</li>
         <li>✏️ Crosswords</li>
         <li>🔐 Secret message puzzles</li>
-        <li>🎲 Bingo &amp; team quiz games</li>
+        <li>🎲 Bingo &amp; Jeopardy-style games</li>
         <li>✅ Answer keys</li>
       </ul>
 
@@ -405,16 +408,16 @@
         <h2>Make your own game, in about a minute</h2>
         <p>
           Type a topic — <em>la ropa</em>, farm animals, the preterite — and get a bingo pack or a
-          team quiz written for your class. Change any word, clue or answer, then play it from this
-          website and print what your students need.
+          Jeopardy-style team quiz written for your class. Change any word, clue or answer, then
+          play it from this website and print what your students need.
         </p>
       </div>
 
       <div class="make-grid">
         <div class="make-step">
-          <h3>1. Say what it is about</h3>
-          <p>A topic your class is studying. AI writes the first draft — thirty words with clues,
-            or five categories of questions.</p>
+          <h3>1. Pick the game and the topic</h3>
+          <p>Bingo — thirty words your class works out from a Spanish clue — or a Jeopardy-style
+            quiz, five categories of clues for teams. AI writes the first draft.</p>
         </div>
         <div class="make-step">
           <h3>2. Make it yours</h3>
@@ -430,6 +433,12 @@
 
       <div class="center make-cta">
         <a class="btn btn-primary" href="{{ route('pricing') }}">See what it costs →</a>
+        {{-- Next to the price, not only in the play card's small print above: a
+             visitor reading this section is deciding whether to buy, and this
+             is the one link that answers "what is it actually like?". --}}
+        @if (config('site.demo_room_code'))
+          <a class="btn btn-ghost" href="/j/{{ config('site.demo_room_code') }}">Try both games free</a>
+        @endif
         <p class="make-note">
           $4.50 a game, or ten for $30. No subscription.
           Already bought a game on TpT? <a href="#play">Add it with its code</a> and edit it free.
