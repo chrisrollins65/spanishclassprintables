@@ -440,7 +440,7 @@
           <a class="btn btn-ghost" href="/j/{{ config('site.demo_room_code') }}">Try both games free</a>
         @endif
         <p class="make-note">
-          $4.50 a game, or ten for $30. No subscription.
+          Games you create are yours for life.
           Already bought a game on TpT? <a href="#play">Add it with its code</a> and edit it free.
         </p>
       </div>

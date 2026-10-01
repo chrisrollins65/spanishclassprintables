@@ -104,7 +104,7 @@
 
   <p class="note">
     Prices are in US dollars. Your local currency and any tax are shown at checkout before you
-    pay. Payments are handled by Paddle, who are the seller of record for every order.
+    pay.
   </p>
 </div>
 
@@ -123,13 +123,6 @@
     You can — the editor works the same whether AI wrote the first draft or you did. A credit
     covers the game either way, because what it pays for is the game, the website it is played
     on, and the printables.
-  </p>
-
-  <h3>Is there a limit on the AI?</h3>
-  <p>
-    Each credit comes with enough AI to write a game and then keep tuning it until it suits your
-    class. Most teachers never come close. If you do reach it, you are told, and you can still
-    change anything in the game yourself.
   </p>
 
   <h3>Can I get a refund?</h3>
