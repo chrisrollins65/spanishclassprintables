@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/ai/prompts.js (commit d00233d) by its
+ * Copied from the packet builder's src/ai/prompts.js (commit 1e0f315) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -625,6 +625,14 @@ Only return valid JSON, nothing else.`;
 
 /* ---------------- Game packs ---------------- */
 
+/* What the pack tests — the item shape, its clue rules and the board's ladder.
+ *
+ * Every game prompt below takes a `type` and defaults it to vocabulary, so a
+ * caller that does not know about types yet still gets the wording it always
+ * got. See src/deckTypes.js for why the registry is shapes and not grammar
+ * points. */
+const { deckType } = require('../deckTypes');
+
 /* The item bank both games are built from.
  *
  * Everything is written against one list so the quiz and the bingo deck drill
@@ -685,53 +693,21 @@ The children are English speakers in US classrooms who are LEARNING Spanish, gra
  * rules would drift, and the drift would only show up as a pack that fails
  * validation for reasons the prompt no longer mentions.
  */
-function gameItemsBody(topic, count) {
-  return `You are a Spanish teacher building a vocabulary bank for classroom games about "${topic}", for English-speaking children who are learning Spanish.
+function gameItemsBody(topic, count, type = deckType()) {
+  return `${type.itemsIntro(topic, count)}
 
 ${LEARNER_RULES}
 
-Give exactly ${count} Spanish words or short phrases connected to "${topic}".
+${type.itemsTask(topic, count)}
 
-${ITEM_RULES}`;
+${type.itemRules}`;
 }
 
-/* What an entry is and the rules it must meet, apart from how many to write.
- *
- * Split out again for the edit prompt, which rewrites a few entries of a bank
- * that already exists: an edit that is not held to these rules drifts straight
- * back to the clues they were written to stop.
- */
-const ITEM_RULES = `For each one provide:
-- "face": the Spanish word on its own, WITHOUT any article — "luna", "bosque", "valiente", "saltar". It is printed in a small square on a bingo card, so keep it to three words at most.
-- "article": "el", "la", "los" or "las" for a noun. Leave it out entirely for anything that is not a noun: an adjective like "valiente" or a verb like "saltar" does not take one.
-- "en": the English meaning, equally short (e.g. "the moon").
-- "sentence": one simple Spanish sentence with the word replaced by ___ (three underscores). The rest of the sentence must make the missing word unambiguous.
-- "sentenceEn": the English translation of that sentence, keeping the ___ in the same place.
-- "definition": a short Spanish description of the word, written to the rules above, that never contains the word itself.
-- "definitionEn": the English translation of that definition. It must not contain the English word either — describe the thing, do not name it.
-
-Hard rules:
-- The Spanish must not be identical to the English. The point is translation practice, so a character or place name spelled the same in both languages ("Mario", "Bowser") is not vocabulary and must not be used. Names only count if the Spanish genuinely differs.
-- Prefer everyday nouns, verbs and adjectives a child could reuse outside this topic.
-- Every face must be different. No two entries may be the same word.
-- No two entries may share a sentence or a definition. Each clue must point at exactly one face, or the game breaks: a child holding a card would have two right answers and no way to choose.
-- The gap holds the bare word, so write the sentence as ordinary Spanish and let it supply its own articles: "La ___ le da sabor a la salsa" becomes "La cebolla le da sabor", and "Un hombre ___ no tiene miedo" becomes "Un hombre valiente no tiene miedo". Make the sentence agree with the word in gender and number.
-- The sentence must point at the answer ON ITS OWN, for a reader who has never seen this word list. Do not lean on the list to narrow it down. "Voy al ___" is not good enough even if only one place appears on the list; "Voy al ___ a comprar pescado fresco" is, and it teaches three more words while it does it. Say what the thing is for, what happens there, what it is made of — give the child something to understand, not just a slot to fill.
-- A gap sentence must be ruled in by its own content, not by grammar alone. "Yo ___ todos los días" is unusable: a dozen words fit it. Put something in the sentence that only the answer can go with — what it is made of, where it happens, what it is used for.
-- Run the SWAP TEST on every sentence you write: the other 29 words are printed on the same card, so a sentence two of them fit is a square with two right answers. A sentence that merely puts the answer in a likely scene ("Mi ___ cocina para toda la familia") fails it; one built on what the answer is ("La mamá de mi mamá es mi ___") passes.
-- A clue MAY use another word from this same list, and often must: 30 words on one topic describe each other, and a garden's "árbol" is hard to place without "rama". Where two clues are equally clear, prefer the one that does not — all 30 words are printed together on the bingo card, so a child can hear a word they can see — but never make a clue vaguer, and never reach for a word the child does not know, only to avoid one. The clue a child can use wins.
-- The ENGLISH meaning is the exception: keep it clear of the other Spanish words on the list. "the frying pan" for "sartén" is read out while "pan" sits on the card, and that overlap teaches nothing because it is an accident of two languages rather than anything about the topic. Say "the pan for frying".
-- A sentence must not give the word away by repeating it — use ___ only.
-- An entry's OWN sentence and definition must be two different clues, not one clue written twice. "El ___ es rosa y le gusta jugar en el barro" with "Es rosa y le gusta jugar en el barro" is the gap sentence with the gap filled in: the website calls a word out by whichever clue type comes up, so a pack like that has three clue types on paper and two in the room. Come at the word from a different angle — the sentence puts it in a scene, so let the definition say what it IS: what it is made of, what it is for, what kind of thing it is.
-- Keep every clue within the WHO THIS IS FOR rules above.`;
-
-const ITEM_SHAPE = '{"face": "luna", "article": "la", "en": "the moon", "sentence": "La ___ brilla en el cielo por la noche.", "sentenceEn": "The ___ shines in the sky at night.", "definition": "Se ve en el cielo por la noche y es blanca.", "definitionEn": "It is seen in the sky at night and it is white."}';
-
-function buildGameItemsPrompt(topic, count = 30) {
-  return `${gameItemsBody(topic, count)}
+function buildGameItemsPrompt(topic, count = 30, type = deckType()) {
+  return `${gameItemsBody(topic, count, type)}
 
 Return your response as JSON in this format:
-{"items": [${ITEM_SHAPE}]}
+{"items": [${type.itemShape}]}
 Return exactly ${count} items. Only return valid JSON, nothing else.`;
 }
 
@@ -798,40 +774,6 @@ function auditEntries(items) {
  * mean something: every team knows a $100 is a translation and a $500 is heard,
  * not read, which is the promise a quiz board is supposed to make.
  */
-/* Two axes, crossed: what kind of clue it is, and whether it is read or heard.
- *
- * The first version stretched one axis instead — "a definition", then "a harder
- * definition" — which is not a difficulty a model can act on, and produced two
- * rows that read the same. Modality is a real second axis: the same clue is
- * meaningfully harder without the text in front of you, and it buys the board
- * twice the listening practice, which is the thing paper cannot do at all.
- *
- * Within a modality the DEFINITION comes first, which is the opposite of how
- * this started. A gap sentence looks like the gentler clue because it hands the
- * child context, but that is only true with a bingo card in front of them: the
- * slot's gender, number and part of speech cut 24 candidates to a handful
- * before the sentence has even been understood. A quiz team has no card, and
- * without one the definition is the easier clue twice over. Every word of a
- * definition points at the answer, where most of a sentence is scenery — the
- * sauce in "La ___ le da sabor a la salsa" is not what tells you the answer.
- * And a definition asks the same meaning-to-word retrieval the $100 translation
- * just asked, where a gap asks the child to parse a line of Spanish FIRST and
- * infer second. Heard, the gap is harder still: a definition is capped at about
- * ten words, while a sentence with a hole in the middle has to be held in the
- * head whole, which is a memory task stacked on a vocabulary one.
- */
-const CLUE_LADDER = [
-  { text: 'a direct translation: ask how to say an English word in Spanish. The easiest rung.', audio: false },
-  { text: 'a short Spanish definition that describes the answer without naming it. Every word of it points at the answer.', audio: false },
-  { text: 'a Spanish sentence with the answer replaced by ___ (three underscores). A whole line of Spanish to read, of which only part narrows the answer.', audio: false },
-  { text: 'a short Spanish definition, meant to be HEARD and never shown. The same clue as the $200, minus the reading.', audio: true },
-  { text: 'a Spanish sentence with the answer replaced by ___, meant to be HEARD and never shown: a whole sentence to hold in the head with a hole in the middle. The hardest rung.', audio: true },
-];
-
-function bankListing(items) {
-  return items.map(i => `${[i.article, i.face].filter(Boolean).join(' ')} = ${i.en}`).join('\n');
-}
-
 /* The quiz-board rules, without the JSON envelope.
  *
  * `bank` is text rather than items for one reason: in the combined prompt the
@@ -839,7 +781,7 @@ function bankListing(items) {
  * paste in yet — it says "the words you just wrote" instead. Same rules either
  * way, which is the point of the split.
  */
-function jeopardyBody(topic, bank, categoryCount, cluesPerCategory) {
+function jeopardyBody(topic, bank, categoryCount, cluesPerCategory, type = deckType()) {
   return `You are a Spanish teacher building a ${categoryCount}-category quiz board about "${topic}" for English-speaking children who are learning Spanish.
 
 ${LEARNER_RULES}
@@ -850,7 +792,7 @@ ${bank}
 CATEGORIES ARE THEMES, NOT QUESTION TYPES.
 Invent ${categoryCount} categories that group the vocabulary by meaning — people, places, objects, food, feelings, events, whatever this topic actually contains. ${NOT_A_QUESTION_TYPE}
 
-${boardRules(categoryCount, cluesPerCategory)}
+${boardRules(categoryCount, cluesPerCategory, type)}
 
 ${finalRules(`$${cluesPerCategory * 100}`)}`;
 }
@@ -858,9 +800,11 @@ ${finalRules(`$${cluesPerCategory * 100}`)}`;
 const NOT_A_QUESTION_TYPE = 'Never name a category after a kind of question ("Translations", "Fill in the blank", "Definitions").';
 
 /* Everything a board must meet once its categories exist. Shared with the
- * board edit prompt, for the same reason ITEM_RULES is shared with the bank's. */
-function boardRules(categoryCount, cluesPerCategory) {
-  const rungs = CLUE_LADDER.slice(0, cluesPerCategory);
+ * board edit prompt, for the same reason a type's item rules are shared with
+ * the bank's. The ladder comes from the deck type: what makes a $500 harder
+ * than a $100 is a property of what the deck tests, not of the board. */
+function boardRules(categoryCount, cluesPerCategory, type = deckType()) {
+  const rungs = type.ladder.slice(0, cluesPerCategory);
   const ladder = rungs
     .map((rung, i) => `- $${(i + 1) * 100} — ${rung.text}`)
     .join('\n');
@@ -893,8 +837,6 @@ Answers are the bare word, without an article — "fontanero", not "el fontanero
 
 No two clues anywhere on the board may share an answer, and a clue must never contain the word it is asking for.`;
 }
-
-const CATEGORY_SHAPE = '{"name": "Gente de la historia", "clues": [{"value": 100, "prompt": "How do you say «the soldier» in Spanish?", "answer": "soldado"}, {"value": 500, "prompt": "Esta persona guía a los demás hacia la libertad.", "promptEn": "This person leads the others towards freedom.", "answer": "líder", "audio": true}]}';
 
 /* The last clue of the game, which every team bets on.
  *
@@ -943,8 +885,6 @@ Its answer must be a word NO square on the board uses. Every team has just playe
 This is the last and biggest clue of the game. It may ask a little more than the ${topValue} squares — the teams can see it, they get longer to think, and they have all bet on it — but it must still be reachable by a beginner under the rules above. A final nobody can get is a round where everybody loses their money at once.`;
 }
 
-const FINAL_SHAPE = '{"category": "La comida de la fiesta", "prompt": "En la mesa hay un ___ grande con velas para cantar el cumpleaños.", "promptEn": "On the table there is a big ___ with candles for singing happy birthday.", "answer": "pastel"}';
-
 /* What the board may take from the bank, and what it must write itself.
  *
  * This was once a flat ban on reusing any clue, which backfired. The model
@@ -984,7 +924,7 @@ The board takes its ANSWERS from the vocabulary bank. Its clues are written for 
  * the class sees "la camisa (the shirt)" in the review list, and the board's
  * answers stay bare.
  */
-function buildQuizGamePrompt(topic, categoryCount = 5, cluesPerCategory = 5) {
+function buildQuizGamePrompt(topic, categoryCount = 5, cluesPerCategory = 5, type = deckType()) {
   const squares = categoryCount * cluesPerCategory;
 
   return `You are a Spanish teacher building a ${categoryCount}-category quiz board about "${topic}" for English-speaking children who are learning Spanish.
@@ -999,22 +939,22 @@ The article is its OWN field. "face" is the bare word — "camisa", never "la ca
 CATEGORIES ARE THEMES, NOT QUESTION TYPES.
 Group those words into ${categoryCount} categories by meaning — people, places, objects, food, feelings, events, whatever this topic actually contains. ${NOT_A_QUESTION_TYPE}
 
-${boardRules(categoryCount, cluesPerCategory)}
+${boardRules(categoryCount, cluesPerCategory, type)}
 
 ${finalRules(`$${cluesPerCategory * 100}`)}
 
 Every answer on the board must be one of the words you chose, and every word you chose must be used exactly once — on a square, or as the final wager's answer.
 
 Return your response as JSON in this format:
-{"items": [{"face": "camisa", "article": "la", "en": "the shirt"}], "categories": [${CATEGORY_SHAPE}], "final": ${FINAL_SHAPE}}
+{"items": [{"face": "camisa", "article": "la", "en": "the shirt"}], "categories": [${type.categoryShape}], "final": ${type.finalShape}}
 Only return valid JSON, nothing else.`;
 }
 
-function buildJeopardyPrompt(topic, items, categoryCount = 5, cluesPerCategory = 5) {
-  return `${jeopardyBody(topic, bankListing(items), categoryCount, cluesPerCategory)}
+function buildJeopardyPrompt(topic, items, categoryCount = 5, cluesPerCategory = 5, type = deckType()) {
+  return `${jeopardyBody(topic, type.bankListing(items), categoryCount, cluesPerCategory, type)}
 
 Return your response as JSON in this format:
-{"categories": [${CATEGORY_SHAPE}], "final": ${FINAL_SHAPE}}
+{"categories": [${type.categoryShape}], "final": ${type.finalShape}}
 Only return valid JSON, nothing else.`;
 }
 
@@ -1064,7 +1004,7 @@ ${lines}
 `;
 }
 
-function buildGameItemsEditPrompt(topic, items, request, history) {
+function buildGameItemsEditPrompt(topic, items, request, history, type = deckType()) {
   const numbered = items.map((item, i) => `${i + 1}. ${JSON.stringify(item)}`).join('\n');
 
   return `You are a Spanish teacher editing the vocabulary bank of a classroom game pack about "${topic}", for English-speaking children who are learning Spanish. The same bank feeds a bingo game and a quiz game.
@@ -1081,10 +1021,10 @@ ${EDIT_ONLY_WHAT_WAS_ASKED}
 
 Every entry you write or rewrite must meet the rules below, checked against the WHOLE bank, not only the entries you touched:
 
-${ITEM_RULES}
+${type.itemRules}
 
 Return ONLY what changed, as JSON in this format:
-{"changes": [{"n": 3, ${ITEM_SHAPE.slice(1)}], "add": [${ITEM_SHAPE}], "remove": [7], "note": "Made the definition for #3 simpler."}
+{"changes": [{"n": 3, ${type.itemShape.slice(1)}], "add": [${type.itemShape}], "remove": [7], "note": "Made the definition for #3 simpler."}
 
 - "changes": each entry you rewrote, by its number above, written out IN FULL — every field, not only the ones you changed. Leave "article" out of a word that does not take one. To swap a word for a different one, rewrite its entry here.
 - "add": new entries, in full, only when the request asks for more words.
@@ -1093,7 +1033,7 @@ ${noteRule("Changed #12 from 'el queso' to 'la mantequilla'.")}
 Leave out any list with nothing in it. Only return valid JSON, nothing else.`;
 }
 
-function buildBoardEditPrompt(topic, items, categories, final, request, history) {
+function buildBoardEditPrompt(topic, items, categories, final, request, history, type = deckType()) {
   const categoryCount = categories.length;
   const cluesPerCategory = Math.max(0, ...categories.map(c => (c.clues || []).length));
   const board = categories.map((cat, ci) => {
@@ -1123,7 +1063,7 @@ function buildBoardEditPrompt(topic, items, categories, final, request, history)
 ${LEARNER_RULES}
 
 Here is the vocabulary the class has been studying. Every answer on the board must come from THIS list, because the students have these words in front of them:
-${bankListing(items)}
+${type.bankListing(items)}
 
 THE BOARD AS IT STANDS:
 ${board}${finalBlock}
@@ -1137,7 +1077,7 @@ The board is always ${categoryCount} categories of ${cluesPerCategory} clues: no
 
 CATEGORIES ARE THEMES, NOT QUESTION TYPES. A category groups the vocabulary by meaning. ${NOT_A_QUESTION_TYPE}
 
-${boardRules(categoryCount, cluesPerCategory)}
+${boardRules(categoryCount, cluesPerCategory, type)}
 
 ${finalRules(`$${cluesPerCategory * 100}`)}
 
@@ -1147,7 +1087,7 @@ These are the bingo pack's clues, so you can tell which sentences are already ta
 ${bingoClues}
 
 Return ONLY what changed, as JSON in this format:
-{"names": [{"category": 2, "name": "Gente de la historia"}], "clues": [{"category": 2, "value": 300, "prompt": "...", "promptEn": "...", "answer": "..."}], "final": ${FINAL_SHAPE}, "note": "Renamed category 2 and rewrote its $300 clue."}
+{"names": [{"category": 2, "name": "Gente de la historia"}], "clues": [{"category": 2, "value": 300, "prompt": "...", "promptEn": "...", "answer": "..."}], "final": ${type.finalShape}, "note": "Renamed category 2 and rewrote its $300 clue."}
 
 - "names": each category you renamed, by its number above.
 - "clues": each clue you rewrote, by its category number and value, IN FULL — prompt, answer, and promptEn (the $100 row has no promptEn). A clue's value and whether it is heard belong to its row, so they never change.
@@ -1269,23 +1209,23 @@ function boardAuditEntries(categories, final) {
  * quiz pack are sold separately and a buyer of both should not find the same
  * sentence in each. Definitions are the exception — see freshWriting.
  */
-function buildGamePackPrompt(topic, count = 30, categoryCount = 5, cluesPerCategory = 5) {
+function buildGamePackPrompt(topic, count = 30, categoryCount = 5, cluesPerCategory = 5, type = deckType()) {
   return `Write a complete Spanish game pack about "${topic}". It has two parts, and you are writing both in one reply.
 
 === PART 1 — THE VOCABULARY BANK ===
 
-${gameItemsBody(topic, count)}
+${gameItemsBody(topic, count, type)}
 
 === PART 2 — THE QUIZ BOARD ===
 
-${jeopardyBody(topic, `the ${count} words you wrote in part 1, and nothing else`, categoryCount, cluesPerCategory)}
+${jeopardyBody(topic, `the ${count} words you wrote in part 1, and nothing else`, categoryCount, cluesPerCategory, type)}
 
 ${freshWriting('part 1')}
 
 === WHAT TO RETURN ===
 
 One JSON object holding both parts, plus the store section it belongs in:
-{"theme": "${topic}", "category": "", "items": [${ITEM_SHAPE}], "categories": [${CATEGORY_SHAPE}], "final": ${FINAL_SHAPE}}
+{"theme": "${topic}", "category": "", "items": [${type.itemShape}], "categories": [${type.categoryShape}], "final": ${type.finalShape}}
 
 "category" is the seller's TpT store section for this pack's THEME, chosen from
 this list and copied exactly, emoji included: ${CUSTOM_CATEGORIES.join(' | ')}

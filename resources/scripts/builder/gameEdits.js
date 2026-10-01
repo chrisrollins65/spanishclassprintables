@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/gameEdits.js (commit d00233d) by its
+ * Copied from the packet builder's src/gameEdits.js (commit 1e0f315) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
