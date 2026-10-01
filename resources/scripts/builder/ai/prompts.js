@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/ai/prompts.js (commit 1e0f315) by its
+ * Copied from the packet builder's src/ai/prompts.js (commit 34674dd) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -631,7 +631,7 @@ Only return valid JSON, nothing else.`;
  * caller that does not know about types yet still gets the wording it always
  * got. See src/deckTypes.js for why the registry is shapes and not grammar
  * points. */
-const { deckType } = require('../deckTypes');
+const { deckType, NOT_A_QUESTION_TYPE } = require('../deckTypes');
 
 /* The item bank both games are built from.
  *
@@ -786,18 +786,15 @@ function jeopardyBody(topic, bank, categoryCount, cluesPerCategory, type = deckT
 
 ${LEARNER_RULES}
 
-Here is the vocabulary the class has been studying. Every answer on the board must come from THIS list, because the students have these words in front of them:
+${type.boardBankIntro}
 ${bank}
 
-CATEGORIES ARE THEMES, NOT QUESTION TYPES.
-Invent ${categoryCount} categories that group the vocabulary by meaning — people, places, objects, food, feelings, events, whatever this topic actually contains. ${NOT_A_QUESTION_TYPE}
+${type.boardGrouping(categoryCount, 'Invent')}
 
 ${boardRules(categoryCount, cluesPerCategory, type)}
 
 ${finalRules(`$${cluesPerCategory * 100}`)}`;
 }
-
-const NOT_A_QUESTION_TYPE = 'Never name a category after a kind of question ("Translations", "Fill in the blank", "Definitions").';
 
 /* Everything a board must meet once its categories exist. Shared with the
  * board edit prompt, for the same reason a type's item rules are shared with
@@ -820,20 +817,16 @@ DIFFICULTY COMES FROM THE VALUE, NOT THE CATEGORY.
 Within every category the clue at each value takes this exact form:
 ${ladder}
 
-So the whole $100 row is translations, the whole $400 row is heard definitions, and so on across all ${categoryCount} categories.
+${type.boardRowSummary(categoryCount)}
 
 For each clue give:
 - "value": the dollar amount
 - "prompt": the clue itself, in the form its row requires
-- "answer": the Spanish word from the list, with its article
+- "answer": ${type.boardAnswerField}
 - "promptEn": the English of the prompt, for a teacher to reveal if a class is stuck. Keep the ___ in place for a gap clue. Omit this for the $100 row, whose prompt is already English.
 - "audio": true on the ${audioValues.join(' and ')} rows only, so the screen reads those aloud instead of showing them.
 
-A gap clue must point at its answer ON ITS OWN. The teams have no word list in front of them — there is no card to eliminate against — so a sentence that only works by narrowing down a printed list does not work here at all. "Mario entra en ___" is not good enough; "Mario entra en ___ verde para viajar bajo tierra" is, and it teaches more on the way.
-
-The SWAP TEST is stricter here than anywhere else, and it applies to the definitions as much as to the gaps. A bingo player who meets an ambiguous clue still has 25 printed words to narrow it down; a team staring at an empty screen has only what you wrote. So for every clue on this board, put the other bank words into it and make sure not one of them also fits — a clue that describes a situation several of them share ("Esta persona juega contigo en la escuela") has to be rebuilt on what the answer alone is.
-
-Answers are the bare word, without an article — "fontanero", not "el fontanero". A gap therefore holds the bare word, so write the sentence as ordinary Spanish with its own articles: "Mario es un ___ muy famoso" becomes "Mario es un fontanero muy famoso". Make the sentence agree with the answer in gender and number.
+${type.boardClueRules()}
 
 No two clues anywhere on the board may share an answer, and a clue must never contain the word it is asking for.`;
 }
@@ -925,6 +918,17 @@ The board takes its ANSWERS from the vocabulary bank. Its clues are written for 
  * answers stay bare.
  */
 function buildQuizGamePrompt(topic, categoryCount = 5, cluesPerCategory = 5, type = deckType()) {
+  /* Only a type that can write its own bank from nothing but a topic.
+   *
+   * This prompt's first half is the bank rules inlined rather than taken from
+   * the type, because a quiz-only pack needs a reduced entry — a face, an
+   * article and an English, with no gap sentence or definition. Handing it a
+   * type it does not have the wording for would produce one half in the type's
+   * ladder and the other in vocabulary's, which reads plausible and is wrong.
+   * The website is the only caller, and it does not pick a type yet. */
+  if (!type.quizFromTopic) {
+    throw new Error(`deck type "${type.id}" cannot write a quiz from a topic alone; generate a bank first and use buildJeopardyPrompt`);
+  }
   const squares = categoryCount * cluesPerCategory;
 
   return `You are a Spanish teacher building a ${categoryCount}-category quiz board about "${topic}" for English-speaking children who are learning Spanish.
@@ -1062,7 +1066,7 @@ function buildBoardEditPrompt(topic, items, categories, final, request, history,
 
 ${LEARNER_RULES}
 
-Here is the vocabulary the class has been studying. Every answer on the board must come from THIS list, because the students have these words in front of them:
+${type.boardBankIntro}
 ${type.bankListing(items)}
 
 THE BOARD AS IT STANDS:
@@ -1075,7 +1079,7 @@ ${EDIT_ONLY_WHAT_WAS_ASKED}
 
 The board is always ${categoryCount} categories of ${cluesPerCategory} clues: nothing is added or removed, only rewritten. Everything you write must meet the board's rules:
 
-CATEGORIES ARE THEMES, NOT QUESTION TYPES. A category groups the vocabulary by meaning. ${NOT_A_QUESTION_TYPE}
+${type.boardGroupingShort}
 
 ${boardRules(categoryCount, cluesPerCategory, type)}
 
