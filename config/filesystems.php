@@ -60,6 +60,23 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Nightly backups only — nothing the app serves. The 'google' driver
+         * is registered by App\Providers\GoogleDriveServiceProvider, and
+         * GOOGLE_DRIVE_FOLDER is a folder id, not a name, because the adapter
+         * is configured without display paths. Archives land in a subfolder of
+         * it named by config/backup.php's 'name', and the retention sweep is
+         * scoped to that subfolder, so the folder itself may be shared with
+         * the other sites on this droplet.
+         */
+        'google_drive_backups' => [
+            'driver' => 'google',
+            'clientId' => env('GOOGLE_DRIVE_CLIENT_ID'),
+            'clientSecret' => env('GOOGLE_DRIVE_CLIENT_SECRET'),
+            'refreshToken' => env('GOOGLE_DRIVE_REFRESH_TOKEN'),
+            'folder' => env('GOOGLE_DRIVE_FOLDER'),
+        ],
+
     ],
 
     /*
