@@ -666,24 +666,30 @@ const { deckType, NOT_A_QUESTION_TYPE } = require('../deckTypes');
  * The examples here are deliberately off-topic for any one pack, so the model
  * copies the pattern rather than the words.
  */
-const LEARNER_RULES = `WHO THIS IS FOR
-The children are English speakers in US classrooms who are LEARNING Spanish, grades 2 to 8, most of them beginners. They are not Spanish speakers. Write every clue for a child who knows the answer word and a few hundred everyday Spanish words — not for a Spanish-speaking child of the same age.
+const LEARNER_AUDIENCE = `WHO THIS IS FOR
+The children are English speakers in US classrooms who are LEARNING Spanish, grades 2 to 8, most of them beginners. They are not Spanish speakers. Write every clue for a child who knows the answer word and a few hundred everyday Spanish words — not for a Spanish-speaking child of the same age.`;
 
-- A clue must be EASIER than its answer. Apart from the answer, every word in a sentence or a definition must be one a beginner already knows: the body (cabeza, mano, pie, ojos, boca), colours, numbers, sizes (grande, pequeño), home, school, family, food, the weather, and everyday verbs (ser, estar, tener, ir, usar, llevar, poner, jugar, comer, ver, hacer). If a clue only works with a word harder than the answer, rewrite it.
-- Describe it; do not define it. Say what you do with it, where you see it, what it looks like — and talk to the child. Never write a dictionary definition, and never open with a category word such as objeto, cosa, prenda, calzado, vehículo, instrumento, terreno, tejido or marco.
-  Bad: "Objeto duro que se pone para no lastimarse el cráneo." (el casco)
-  Good: "Te lo pones en la cabeza para no hacerte daño."
-  Bad: "Calzado con ruedas para moverse por superficies lisas." (los patines)
-  Good: "Te los pones en los pies y vas muy rápido."
-- A definition is about ten words at most. Short, concrete, everyday.
-- Gap sentences follow the same rule: the context that points at the answer must be made of words a beginner knows.
-- SIMPLE IS NOT VAGUE. Easy words must still point at ONE answer. If a clue in easy words could fit two things, add another concrete detail in easy words — colour, size, where it is, when you use it — never a harder word.
-  Too vague: "Te la pones en el cuerpo para jugar." (could be a shirt, a uniform, a coat)
-  Better: "Te la pones arriba para jugar, y tiene tu número."
-- THE SWAP TEST, on every clue before you keep it: put the OTHER words of this pack into it, one at a time. If a second one still makes sense, the clue is not finished — rewrite it, do not move on. A clue must rest on something true of the answer ALONE: what it is made of, what it does that nothing else on the list does, who it is to you. A scene the answer merely appears in is not enough, because everything else in the pack appears in that scene too.
-  Too vague: "Mi ___ usa la herramienta en el taller los sábados." (the father fits — so does the uncle, the neighbour, the brother)
-  Better: "El hermano de mi mamá es mi ___ y viene a comer los domingos."
-  This bites hardest where the pack holds a family of similar words — people, places, foods — that share one scene. There, name the relation or the property, never the scene.`;
+/* The audience is shared; what makes a good CLUE is not.
+ *
+ * Who the child is never changes — an English-speaking beginner in a US
+ * classroom — so that paragraph is one constant every type is held to. The
+ * rules under it are instructions about a particular kind of clue, and they do
+ * not survive a change of kind: "describe it, do not define it" has nothing to
+ * say about a verb form, and a swap test phrased as "what it is made of, what
+ * it does" is the wrong question to ask about «hablé», where the only thing
+ * separating it from «hablas» is person and tense.
+ *
+ * Keeping them shared meant a forma prompt carried two swap tests that
+ * disagreed, which is worse than either alone. So each type states its own,
+ * and each one restates the two principles that really are universal: a clue
+ * must be easier than its answer, and easy words must still point at one
+ * answer. See src/deckTypes.js.
+ */
+function learnerRules(type = deckType()) {
+  return `${LEARNER_AUDIENCE}
+
+${type.clueRules}`;
+}
 
 /* The vocabulary-bank rules, without the JSON envelope.
  *
@@ -696,7 +702,7 @@ The children are English speakers in US classrooms who are LEARNING Spanish, gra
 function gameItemsBody(topic, count, type = deckType()) {
   return `${type.itemsIntro(topic, count)}
 
-${LEARNER_RULES}
+${learnerRules(type)}
 
 ${type.itemsTask(topic, count)}
 
@@ -749,6 +755,47 @@ Return your response as JSON in this format:
 Include every clue. Only return valid JSON, nothing else.`;
 }
 
+/* Does each form actually match its own formula?
+ *
+ * The one check a deck of FORMS needs and a deck of words has no use for, and
+ * nothing in bingoCards.js or jeopardyBoard.js can do it: it is a fact about
+ * Spanish, not about the data. A real generated bank came back with
+ * "comparamos" under the formula "nosotros + comprar (pretérito)" — the
+ * pretérito of comparar, not comprar — and every string check passed it,
+ * because as DATA it is a perfectly good entry: a unique face, a formula, an
+ * English, a sentence that fits.
+ *
+ * It is the worst defect this product can ship. An ambiguous clue costs a
+ * disputed square; a wrong conjugation printed across 96 bingo cards teaches
+ * thirty children the wrong form and is the thing a grammar pack is sold to
+ * prevent. The bank audit judges clues one at a time and has no question this
+ * fits under, so it gets a call of its own, run only by types that declare it.
+ */
+function buildFormAuditPrompt(items) {
+  const numbered = items
+    .map((i, n) => `${n + 1}. ${i.face}  —  formula: ${i.prompt || '(none)'}  —  English: ${i.en || '(none)'}`)
+    .join('\n');
+
+  return `You are checking a Spanish grammar bank written for a classroom game. Each entry is a FORM, with the formula that describes it and its English.
+
+Your only job is to say whether the form is RIGHT. Ignore style, ignore the sentences, ignore whether the English is elegant.
+
+${numbered}
+
+For EACH entry, work the formula out yourself and compare it to the form that is written.
+
+- "ok": true when the written form is exactly what the formula produces — the right verb, the right person, the right tense or mood, spelled correctly, accents included.
+- "ok": false when it is not. The commonest failure is a form built from a DIFFERENT but similar-looking word: "comparamos" (comparar) written under "nosotros + comprar", or "sentamos" (sentar) under "sentir". A missing or wrong accent is also false — "hablo" and "habló" are different tenses.
+- "should": only when ok is false — the form the formula actually produces.
+- "why": only when ok is false — a few words saying what went wrong, in English.
+
+Also mark ok:false when the ENGLISH does not match the form, since that is the other half of what a child is taught.
+
+Return your response as JSON in this format:
+{"checks": [{"n": 1, "ok": true}, {"n": 7, "ok": false, "should": "compramos", "why": "comparamos is from comparar, not comprar"}]}
+Include every entry. Only return valid JSON, nothing else.`;
+}
+
 /* The clues the audit judges, in the order it numbers them.
  *
  * Exported so the handler can map a check's number back to the clue it is
@@ -784,7 +831,7 @@ function auditEntries(items) {
 function jeopardyBody(topic, bank, categoryCount, cluesPerCategory, type = deckType()) {
   return `You are a Spanish teacher building a ${categoryCount}-category quiz board about "${topic}" for English-speaking children who are learning Spanish.
 
-${LEARNER_RULES}
+${learnerRules(type)}
 
 ${type.boardBankIntro}
 ${bank}
@@ -887,7 +934,7 @@ This is the last and biggest clue of the game. It may ask a little more than the
  * twenty-four words, while a quiz team has nothing to eliminate against. The
  * board is the half that can least afford the weaker clue.
  *
- * It also fought LEARNER_RULES. For a beginner bank of concrete nouns there
+ * It also fought the learner rules. For a beginner bank of concrete nouns there
  * are only so many ways to describe "el perro" in words a beginner knows, so
  * demanding a second one pushed it into the two failure modes those rules
  * exist to stop: too vague, or a word harder than the answer.
@@ -933,7 +980,7 @@ function buildQuizGamePrompt(topic, categoryCount = 5, cluesPerCategory = 5, typ
 
   return `You are a Spanish teacher building a ${categoryCount}-category quiz board about "${topic}" for English-speaking children who are learning Spanish.
 
-${LEARNER_RULES}
+${learnerRules(type)}
 
 FIRST CHOOSE THE VOCABULARY.
 Pick ${squares + 1} Spanish words for this topic that a beginner should learn: ${squares} for the squares and one more for the final wager, whose answer may not appear on the board. Concrete, everyday words a child can picture. Give each one its article and its English — the class reviews this list on screen before playing, and a word without its article teaches the wrong thing.
@@ -1013,7 +1060,7 @@ function buildGameItemsEditPrompt(topic, items, request, history, type = deckTyp
 
   return `You are a Spanish teacher editing the vocabulary bank of a classroom game pack about "${topic}", for English-speaking children who are learning Spanish. The same bank feeds a bingo game and a quiz game.
 
-${LEARNER_RULES}
+${learnerRules(type)}
 
 THE BANK AS IT STANDS, numbered:
 ${numbered}
@@ -1064,7 +1111,7 @@ function buildBoardEditPrompt(topic, items, categories, final, request, history,
 
   return `You are a Spanish teacher editing a ${categoryCount}-category quiz board about "${topic}" for English-speaking children who are learning Spanish.
 
-${LEARNER_RULES}
+${learnerRules(type)}
 
 ${type.boardBankIntro}
 ${type.bankListing(items)}
@@ -1116,8 +1163,8 @@ Leave out any list with nothing in it. Only return valid JSON, nothing else.`;
  * specificity is the main one here rather than the second, since there is no
  * list to fall back on.
  */
-function buildBoardAuditPrompt(categories, final) {
-  const entries = boardAuditEntries(categories, final);
+function buildBoardAuditPrompt(categories, final, type = deckType()) {
+  const entries = boardAuditEntries(categories, final, type);
   const answers = [...new Set((categories || [])
     .flatMap(c => (c.clues || []).map(q => q.answer))
     .concat(final && final.answer ? [final.answer] : [])
@@ -1152,23 +1199,41 @@ Include every clue. Only return valid JSON, nothing else.`;
 
 /* The board clues the audit judges, in the order it numbers them.
  *
- * The cheapest row is left out: it asks how to say an English word, so it is
- * already English, carries no Spanish that could outrun its answer, and names
- * what it wants. Every row above it is a Spanish clue that has to stand alone.
+ * Rows whose rung is metalanguage are left out — see the comment inside. For
+ * vocabulary that is the cheapest row alone, which asks how to say an English
+ * word: already English, naming what it wants, with no Spanish to outrun the
+ * answer. Every other row is a Spanish clue that has to stand alone.
  *
  * Exported for the same reason auditEntries is - so the handler can map a
  * check's number back to the clue without re-deriving the order.
  */
-function boardAuditEntries(categories, final) {
+function boardAuditEntries(categories, final, type = deckType()) {
   const cats = Array.isArray(categories) ? categories : [];
-  const values = cats.flatMap(c => (c.clues || []).map(q => Number(q.value) || 0));
-  const cheapest = values.length ? Math.min(...values) : 0;
+  /* Which rows the audit reads at all.
+   *
+   * A row is skipped when its rung is not Spanish to be understood but
+   * METALANGUAGE naming the parts of an answer. Vocabulary has one such row, the
+   * cheapest, which asks how to say an English word; a deck of forms has two, the
+   * formula and the transformation, and they are the same case for the same
+   * reason — there is no Spanish in them that could outrun the answer.
+   *
+   * By rung rather than by value, because that is where the fact lives. Judging
+   * the transformation row cost five false "hard word" flags per board, every one
+   * of them «tiempo» in "de «hablaron» a nosotros, mismo tiempo" — and an audit
+   * that cries wolf on a fifth of the board is an audit nobody reads.
+   */
+  const ladderValues = [...new Set(cats.flatMap(c => (c.clues || []).map(q => Number(q.value) || 0)))]
+    .sort((a, b) => a - b);
+  const skip = new Set(ladderValues.filter((value, i) => {
+    const rung = type.ladder[i];
+    return rung ? rung.audited === false : i === 0;
+  }));
 
   const entries = [];
   cats.forEach(cat => {
     (cat.clues || []).forEach(clue => {
       if (!clue || !clue.prompt) return;
-      if ((Number(clue.value) || 0) === cheapest) return;
+      if (skip.has(Number(clue.value) || 0)) return;
       entries.push({
         category: cat.name || '',
         value: clue.value,
@@ -1400,6 +1465,7 @@ module.exports = {
   buildGameItemsPrompt,
   buildGamePackPrompt,
   buildGapAuditPrompt,
+  buildFormAuditPrompt,
   auditEntries,
   buildBoardAuditPrompt,
   boardAuditEntries,

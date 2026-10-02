@@ -22,9 +22,13 @@
  *
  * `bingoCards.js` and `jeopardyBoard.js` are deliberately ignorant of all this:
  * they know faces and clues and nothing about what the faces mean. This file is
- * where that ignorance is paid for, and it is required from `ai/prompts.js`
- * rather than the other way round so the shared writing rules (LEARNER_RULES)
- * stay in one place and a type never has to reach back into the prompts.
+ * where that ignorance is paid for.
+ *
+ * It is required FROM `ai/prompts.js` and never the other way round, so a type
+ * never reaches back into the prompts. What stayed behind there is the one thing
+ * every type shares: LEARNER_AUDIENCE, who the child is. What makes a good clue
+ * came here as each type's `clueRules`, because it is not the same question for a
+ * noun and for a verb form — see FORMA_CLUE_RULES.
  */
 
 /* What an entry is and the rules it must meet, apart from how many to write.
@@ -84,7 +88,7 @@ const ITEM_SHAPE = '{"face": "luna", "article": "la", "en": "the moon", "sentenc
  * head whole, which is a memory task stacked on a vocabulary one.
  */
 const CLUE_LADDER = [
-  { text: 'a direct translation: ask how to say an English word in Spanish. The easiest rung.', audio: false },
+  { text: 'a direct translation: ask how to say an English word in Spanish. The easiest rung.', audio: false, audited: false },
   { text: 'a short Spanish definition that describes the answer without naming it. Every word of it points at the answer.', audio: false },
   { text: 'a Spanish sentence with the answer replaced by ___ (three underscores). A whole line of Spanish to read, of which only part narrows the answer.', audio: false },
   { text: 'a short Spanish definition, meant to be HEARD and never shown. The same clue as the $200, minus the reading.', audio: true },
@@ -98,6 +102,29 @@ function bankListing(items) {
 const CATEGORY_SHAPE = '{"name": "Gente de la historia", "clues": [{"value": 100, "prompt": "How do you say «the soldier» in Spanish?", "answer": "soldado"}, {"value": 500, "prompt": "Esta persona guía a los demás hacia la libertad.", "promptEn": "This person leads the others towards freedom.", "answer": "líder", "audio": true}]}';
 
 const FINAL_SHAPE = '{"category": "La comida de la fiesta", "prompt": "En la mesa hay un ___ grande con velas para cantar el cumpleaños.", "promptEn": "On the table there is a big ___ with candles for singing happy birthday.", "answer": "pastel"}';
+
+/* What makes a good clue for a bank of WORDS.
+ *
+ * Moved here from LEARNER_RULES unchanged. It opens on the two universal
+ * principles — a clue must be easier than its answer, and easy words must still
+ * point at one answer — and then says what that means for a noun you can
+ * picture, which is the part no other type can reuse.
+ */
+const VOCABULARIO_CLUE_RULES = `- A clue must be EASIER than its answer. Apart from the answer, every word in a sentence or a definition must be one a beginner already knows: the body (cabeza, mano, pie, ojos, boca), colours, numbers, sizes (grande, pequeño), home, school, family, food, the weather, and everyday verbs (ser, estar, tener, ir, usar, llevar, poner, jugar, comer, ver, hacer). If a clue only works with a word harder than the answer, rewrite it.
+- Describe it; do not define it. Say what you do with it, where you see it, what it looks like — and talk to the child. Never write a dictionary definition, and never open with a category word such as objeto, cosa, prenda, calzado, vehículo, instrumento, terreno, tejido or marco.
+  Bad: "Objeto duro que se pone para no lastimarse el cráneo." (el casco)
+  Good: "Te lo pones en la cabeza para no hacerte daño."
+  Bad: "Calzado con ruedas para moverse por superficies lisas." (los patines)
+  Good: "Te los pones en los pies y vas muy rápido."
+- A definition is about ten words at most. Short, concrete, everyday.
+- Gap sentences follow the same rule: the context that points at the answer must be made of words a beginner knows.
+- SIMPLE IS NOT VAGUE. Easy words must still point at ONE answer. If a clue in easy words could fit two things, add another concrete detail in easy words — colour, size, where it is, when you use it — never a harder word.
+  Too vague: "Te la pones en el cuerpo para jugar." (could be a shirt, a uniform, a coat)
+  Better: "Te la pones arriba para jugar, y tiene tu número."
+- THE SWAP TEST, on every clue before you keep it: put the OTHER words of this pack into it, one at a time. If a second one still makes sense, the clue is not finished — rewrite it, do not move on. A clue must rest on something true of the answer ALONE: what it is made of, what it does that nothing else on the list does, who it is to you. A scene the answer merely appears in is not enough, because everything else in the pack appears in that scene too.
+  Too vague: "Mi ___ usa la herramienta en el taller los sábados." (the father fits — so does the uncle, the neighbour, the brother)
+  Better: "El hermano de mi mamá es mi ___ y viene a comer los domingos."
+  This bites hardest where the pack holds a family of similar words — people, places, foods — that share one scene. There, name the relation or the property, never the scene.`;
 
 /* True of every type: a category is a theme, never a kind of question.
  *
@@ -164,6 +191,7 @@ const VOCABULARIO = {
   itemsTask: (topic, count) =>
     `Give exactly ${count} Spanish words or short phrases connected to "${topic}".`,
 
+  clueRules: VOCABULARIO_CLUE_RULES,
   itemRules: ITEM_RULES,
   itemShape: ITEM_SHAPE,
   ladder: CLUE_LADDER,
@@ -174,6 +202,9 @@ const VOCABULARIO = {
   // Only vocabulary can write a bank from nothing but a topic — see
   // buildQuizGamePrompt, whose reduced entry shape is inlined there.
   quizFromTopic: true,
+
+  // Nothing to check: a word is not derived from anything.
+  formAudit: false,
 
   /* Which fields the bank editor in step 2 puts on screen.
    *
@@ -214,6 +245,32 @@ const VOCABULARIO = {
  * meaning. Both are allowed on purpose: restricting to the first would have been
  * a guess, and the audit prompts are what will show whether the second holds up.
  */
+/* What makes a good clue for a bank of FORMS.
+ *
+ * The same two principles vocabulary opens on, and then a different answer to
+ * "what could this clue also fit?" — which is the whole of what a clue has to
+ * defend against, and it is not the same question here.
+ *
+ * For a noun, two answers are confusable when they share a SCENE: the father and
+ * the uncle both come to dinner. For a form, they are confusable when they share
+ * a MEANING, which in a paradigm is all of them — hablo, hablas and habla are one
+ * meaning in three persons. So the vocabulary advice to rest a clue on "what it
+ * is made of, what it does" is not merely unhelpful here, it points away from the
+ * only two things that separate the answers: who is doing it and when.
+ */
+const FORMA_CLUE_RULES = `- A clue must be EASIER than its answer. Apart from the form you are asking for, every word in a sentence must be one a beginner already knows: the body, colours, numbers, sizes, home, school, family, food, the weather, and everyday verbs (ser, estar, tener, ir, hacer, jugar, comer, ver). The child is working out an ENDING; make everything else free.
+- The clue tests the FORM, so nothing else in it may be hard. A sentence that makes a child decode two unknown words before they reach the blank has tested vocabulary and called it grammar.
+- SIMPLE IS NOT VAGUE. Easy words must still point at ONE form. If a sentence could take two forms from this bank, do not reach for a harder word — add the two things that are free and decisive: name the SUBJECT, and put in a TIME MARKER.
+  Too vague: "Yo ___ mucho." (hablo, hablé, hablaba and hablaré all fit)
+  Better: "Ayer yo ___ mucho por teléfono con mi tía."
+- THE SWAP TEST, on every clue before you keep it: put the OTHER forms of this pack into it, one at a time. If a second one still fits, the clue is not finished — rewrite it, do not move on. A clue must rest on what is true of this form ALONE, and for a form that is only ever two things:
+  WHO — Spanish drops its subject pronouns, so a bare "___ español todos los días" fits hablo, hablas AND habla. Name the subject: a pronoun ("Nosotros ___"), a person ("Mi hermano ___"), or a vocative that forces it ("Juan, ¿cuándo ___ tú?").
+  WHEN — the tense has to be forced by a marker that admits one. Pretérito: ayer, anoche, la semana pasada, el año pasado. Presente: todos los días, siempre, normalmente, ahora. Imperfecto: cuando era niño, antes, todos los veranos. Futuro: mañana, la próxima semana, algún día.
+  Too vague: "Mis primos ___ en el parque." (juegan, jugaron, jugaban all fit)
+  Better: "Los sábados mis primos ___ en el parque con nosotros."
+  This bites hardest where the pack holds one word's whole paradigm, because then EVERY face means the same thing and who-and-when is all you have. There, vary the subject and the time marker and keep the rest of the sentence plain — do not invent exotic situations to make the sentences look different from each other.
+- Never put the answer's own dictionary word in its clue. A sentence holding the infinitive has handed over everything but the ending.`;
+
 const FORMA_ITEM_RULES = `For each one provide:
 - "face": the form itself and nothing else — "hablé", "comemos", "pon", "altas". No subject pronoun: "hablé", never "yo hablé". It is printed in a small square on a bingo card, so two words at most (a compound tense like "he hablado" is two).
 - "prompt": the FORMULA — the ingredients, not the answer. Person or number, the dictionary word, and the tense or mood, in the shortest form a teacher can read aloud: "yo + hablar (pretérito)", "nosotros + comer (presente)", "tú + poner (mandato)", "alto + femenino plural".
@@ -258,10 +315,10 @@ const FORMA_ITEM_SHAPE = '{"face": "hablé", "prompt": "yo + hablar (pretérito)
  * to go back to, is the whole skill a tense test is after.
  */
 const FORMA_LADDER = [
-  { text: 'the FORMULA: give the person, the dictionary word and the tense, and ask for the form — "yo + hablar, pretérito". The easiest rung: the verb and the person are both handed over, so only the ending is left.', audio: false },
+  { text: 'the FORMULA: give the person, the dictionary word and the tense, and ask for the form — "yo + hablar, pretérito". The easiest rung: the verb and the person are both handed over, so only the ending is left.', audio: false, audited: false },
   { text: 'the ENGLISH of the form — "we were eating" — and ask for the Spanish. Harder than the formula, because the child has to choose the verb as well as inflect it.', audio: false },
   { text: 'a Spanish sentence with the form replaced by ___ (three underscores), whose subject and time marker leave exactly one form of this bank that fits.', audio: false },
-  { text: 'a TRANSFORMATION: give a DIFFERENT form of the same word and ask for this one — "de «hablamos» a yo, mismo tiempo". The child has to read the form they are given, work out what it is, and move one part of it.', audio: false },
+  { text: 'a TRANSFORMATION: give a DIFFERENT form of the same word and ask for this one — "de «hablamos» a yo, mismo tiempo". The child has to read the form they are given, work out what it is, and move one part of it.', audio: false, audited: false },
   { text: 'a Spanish sentence with the form replaced by ___, meant to be HEARD and never shown. The hardest rung: the subject and the time marker are the only things that narrow it, and both go past in one hearing.', audio: true },
 ];
 
@@ -290,6 +347,7 @@ const FORMA = {
   itemsTask: (topic, count) =>
     `Give exactly ${count} Spanish forms that belong to "${topic}". If the topic names one paradigm of one word, work through its persons and numbers; if it names a tense or a pattern across many words, use many words in it. Either is right, and the topic decides which.`,
 
+  clueRules: FORMA_CLUE_RULES,
   itemRules: FORMA_ITEM_RULES,
   itemShape: FORMA_ITEM_SHAPE,
   ladder: FORMA_LADDER,
@@ -301,6 +359,10 @@ const FORMA = {
   // formula, so a quiz written from a bare topic would be missing the field its
   // own cheapest row asks for.
   quizFromTopic: false,
+
+  // A form IS derived — from a word, a person and a tense — so it can be wrong
+  // in a way no string check sees. See buildFormAuditPrompt.
+  formAudit: true,
 
   // No article on a verb form, no definition of one — and the formula is this
   // deck's cheapest clue, so it needs a box of its own.
