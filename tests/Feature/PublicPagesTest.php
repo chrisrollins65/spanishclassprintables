@@ -37,15 +37,21 @@ class PublicPagesTest extends TestCase
         $this->get($path)->assertOk();
     }
 
-    public function test_the_pricing_page_states_both_prices_and_who_sells(): void
+    /**
+     * The prices, on the one page whose job is to state them.
+     *
+     * Paddle is deliberately NOT named here. Naming the merchant of record on
+     * the sales page is not something a teacher reads for, and no comparable
+     * store does it; the disclosure belongs with the documents that bind the
+     * purchase, where test_the_legal_pages_identify_the_operator pins it on
+     * terms, privacy and refunds alike.
+     */
+    public function test_the_pricing_page_states_both_prices(): void
     {
         $this->get('/pricing')
             ->assertOk()
             ->assertSee('$4.50')
-            ->assertSee('$30')
-            // Paddle is the merchant of record, and a buyer is entitled to
-            // know before they reach a checkout with someone else's name on it.
-            ->assertSee('Paddle');
+            ->assertSee('$30');
     }
 
     /**
@@ -120,15 +126,17 @@ class PublicPagesTest extends TestCase
      * Everything was built and reachable by exactly one footer link, which is
      * the same as not being for sale. A visitor lands here from a code on a
      * packet they bought; this is what tells them they can make their own.
+     *
+     * The price is deliberately not asserted here, and not printed here: the
+     * homepage pitches, and the link to the pricing page is what has to hold.
+     * A figure repeated on two pages is a figure that can disagree with itself.
      */
     public function test_the_homepage_pitches_making_a_game(): void
     {
         $this->get('/')
             ->assertOk()
             ->assertSee('Make your own game', false)
-            ->assertSee(route('pricing'), false)
-            // The prices, so nobody has to click to learn what it costs.
-            ->assertSee('$4.50', false);
+            ->assertSee(route('pricing'), false);
     }
 
     public function test_the_privacy_policy_names_who_else_handles_the_data(): void
