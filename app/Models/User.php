@@ -47,8 +47,16 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(CreditEntry::class);
     }
 
-    /** What the ledger adds up to. Never stored: see the credit_entries migration. */
-    public function credits(): int
+    /**
+     * What the ledger adds up to: credits bought or given, less ones refunded.
+     *
+     * NOT a balance, and never shown as one. The ledger records money, and
+     * spending a credit is not a movement of money — it puts a game on a unit
+     * (see CreditUnit) and writes no row here. So this only ever climbs: a
+     * teacher who has spent all ten they bought still reads as ten. It is for
+     * reconciling with Paddle. What a teacher can spend is availableCredits().
+     */
+    public function creditsPurchased(): int
     {
         return (int) $this->creditEntries()->sum('delta');
     }

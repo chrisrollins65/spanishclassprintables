@@ -233,10 +233,18 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
    a teacher who is not looking for it. Three signals carry it at once — size,
    the team's own colour as a filled block, and a one-off pulse on handover —
    because any single one of them gets missed. */
+/* Three things fought each other here and all three showed on screen.
+   `baseline` lined the mascot up with the text's baseline rather than its
+   middle, so the badge sat low; the label had nothing stopping it wrapping, so
+   "LE TOCA A" broke after "TOCA"; and the name could not shrink inside a flex
+   row without `min-width: 0`, so it was clipped mid-word while the label kept
+   space it was not using. The label never wraps and never shrinks, and the name
+   takes whatever is left before it ellipses. */
 .turn-pill {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.6rem;
+  max-width: 100%;
   border: 3px solid;
   border-radius: 999px;
   padding: 0.35em 1.2em;
@@ -247,11 +255,15 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 .turn-pill .name {
   font-size: clamp(1.2rem, 2.6vw, 2.4rem);
   font-weight: 800;
   line-height: 1.1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 @keyframes turn-in {
@@ -1647,3 +1659,8 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
 @media (prefers-reduced-motion: reduce) {
   html:has(#app > .board-screen:not(.bingo-caller)) body::after { animation: none; transform: rotate(-90deg); }
 }
+
+/* Under a revealed answer, where more than one translation is right.
+   Quiet and small: it is a note to the teacher standing at the board, not part
+   of the answer the class is reading. */
+.answer-note{display:block;margin-top:.4em;font-size:.5em;font-weight:400;opacity:.75;letter-spacing:0}

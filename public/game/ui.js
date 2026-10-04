@@ -195,6 +195,14 @@
     ringing = null;
   }
 
+  /* Always a Spanish voice, because everything either game reads aloud is
+   * Spanish. Bingo's listening clue picks a Spanish clue type on purpose, and
+   * the quiz's spoken row is a dictation of a Spanish sentence.
+   *
+   * An English voice lived here briefly, for a version of the sentence board
+   * that read the ENGLISH aloud and asked for the Spanish. That taught nothing
+   * about Spanish — listening to your own language only stops you re-reading —
+   * so the row became a dictation and the voice went with it. */
   function utterance(text, rate) {
     const utter = new SpeechSynthesisUtterance(text);
     const voice = spanishVoice();

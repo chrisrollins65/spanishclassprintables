@@ -102,18 +102,71 @@ class TeacherGame extends Model
      * teacher writing their own game by hand meets the same screen as one who
      * asked AI, with blank rows instead of written ones.
      */
-    public static function blank(string $kind, string $theme): array
-    {
+    /**
+     * @param  string  $type  The deck type id. Empty means vocabulary, as it does
+     *                        everywhere else, and is what every game made before
+     *                        deck types existed is.
+     * @param  list<string>  $clueTypes  The deck's clue types, from the builder's
+     *                                   registry (Builder::types()). The default
+     *                                   is vocabulary's, used only when rebuilding
+     *                                   a payload for a game that predates types.
+     */
+    /**
+     * @param  array<string, mixed>  $flags  What the deck tells the ROOM, as
+     *      opposed to what it tells the writer: whether more than one answer is
+     *      right, and which language the clues are in. The builder stamps these
+     *      on when it publishes; a game made here never passes through that, so
+     *      they have to be written in when it is created or the room plays
+     *      without them.
+     */
+    public static function blank(
+        string $kind,
+        string $theme,
+        string $type = '',
+        array $clueTypes = ['en', 'sentence', 'definition'],
+        array $flags = [],
+    ): array {
         $game = $kind === 'bingo'
             ? ['title' => $theme, 'cardSets' => [['size' => 4, 'count' => 48], ['size' => 3, 'count' => 48]]]
             : ['title' => $theme, 'categories' => []];
 
-        return [
+        $blank = [
             'theme' => $theme,
             'items' => [],
-            'clueTypes' => $kind === 'bingo' ? ['en', 'sentence', 'definition'] : [],
+            /* Both kinds, not bingo alone.
+             *
+             * These are a property of the DECK — the ways a word of this type can
+             * be clued — not of the game it feeds, and the quiz needs them too
+             * now: the teacher's word editor decides from them whether a word has
+             * a formula box. Left empty, a grammar quiz was generated with its
+             * formulas and then offered no way to edit one. */
+            'clueTypes' => $clueTypes,
             'games' => [$kind => $game],
         ];
+
+        // Written only when it is not vocabulary, so nothing that exists churns.
+        if ($type !== '' && $type !== 'vocabulario') {
+            $blank['type'] = $type;
+        }
+
+        foreach (['answerIsOpen'] as $flag) {
+            if (! empty($flags[$flag])) {
+                $blank[$flag] = true;
+            }
+        }
+
+        /* Whether a leading article is its own field or part of the answer.
+         *
+         * Stored only when it is FALSE, the opposite way round from the flags
+         * above, because splitting the article is what every deck did before
+         * sentences existed: absent has to keep meaning "split", or every game
+         * already saved changes behaviour. tidyItems is the only thing that
+         * reads it. */
+        if (($flags['stripsArticles'] ?? true) === false) {
+            $blank['stripsArticles'] = false;
+        }
+
+        return $blank;
     }
 
     /**
@@ -127,7 +180,23 @@ class TeacherGame extends Model
     {
         $payload = $this->data() ?: self::blank((string) $this->kind, (string) $this->theme);
 
-        $payload['items'] = self::tidyItems($written['items'] ?? []);
+        // A sentence deck's articles belong to the sentence; see tidyItems.
+        $payload['items'] = self::tidyItems(
+            $written['items'] ?? [],
+            ($payload['stripsArticles'] ?? true) !== false,
+        );
+
+        /* The study sheet, for a deck whose bank is its answers.
+         *
+         * A sentence pack cannot show its own bank to the class — that is the
+         * answer list — so the model writes a short glossary beside the
+         * sentences and it rides back in the same reply. Dropped here, the pack
+         * had nothing for the class to revise from and the printed page fell
+         * back to listing the answers.
+         */
+        if (isset($written['reference']['rows']) && is_array($written['reference']['rows'])) {
+            $payload['reference'] = $written['reference'];
+        }
 
         if ($this->kind === 'jeopardy') {
             $payload['games']['jeopardy']['categories'] = $written['categories'] ?? [];
@@ -349,14 +418,23 @@ class TeacherGame extends Model
      * "la camisa" in `face` reads as "la la camisa" on screen once the article
      * is put back, so it is taken apart here. The prompt says so too; this is
      * the half that does not depend on the model having listened.
+     *
+     * NOT for every deck. Where an entry is a whole sentence the leading
+     * article belongs to it: "La enfermera trabaja en el hospital" came back
+     * as article "la" and a face beginning "enfermera", which is not the
+     * sentence the board answers with and matches nothing in the bank. The
+     * deck says which it is (`stripsArticles`), the same flag the board's own
+     * check reads — see `bare()` in jeopardyBoard.js.
      */
-    private static function tidyItems(array $items): array
+    private static function tidyItems(array $items, bool $splitArticles = true): array
     {
-        return array_values(array_map(function (array $item): array {
+        return array_values(array_map(function (array $item) use ($splitArticles): array {
             $face = trim((string) ($item['face'] ?? ''));
 
-            if (preg_match('/^(el|la|los|las)\s+(.+)$/iu', $face, $found)) {
-                $item['article'] = $item['article'] ?: strtolower($found[1]);
+            if ($splitArticles && preg_match('/^(el|la|los|las)\s+(.+)$/iu', $face, $found)) {
+                // `??`, not `?:` — a deck whose items have no article field at
+                // all reached here and raised "Undefined array key".
+                $item['article'] = ($item['article'] ?? '') ?: strtolower($found[1]);
                 $face = $found[2];
             }
 

@@ -71,8 +71,18 @@
   }
 
   main { flex: 1; padding-block: clamp(28px, 6vw, 64px); }
+  /* Three widths, by what the page IS rather than by what it contains.
+     narrow is a stack of inputs — a login box, a password reset — where a long
+     line is a long way for the eye to travel back. medium is a list. roomy is a
+     page of side-by-side choices, which needs the room its cards take and would
+     otherwise crowd them into a column narrower than the header above them.
+     Prose inside a roomy page caps itself; see .lead and .step > p. */
   .narrow { max-width: 460px; }
   .medium { max-width: 760px; }
+  .roomy { max-width: 960px; }
+  /* Reading width, independent of the container. A line of 100+ characters is
+     hard to track back from, so the text stops before the cards do. */
+  .roomy .lead, .roomy .step > p, .roomy .hint { max-width: 64ch; }
   .card { background: var(--card); border: 1px solid var(--edge); border-radius: var(--radius); box-shadow: var(--shadow); padding: clamp(22px, 4vw, 34px); position: relative; overflow: hidden; }
   .card.accent::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 6px; background: linear-gradient(90deg, var(--accent), var(--pink), var(--gold), var(--teal)); }
   .card + .card { margin-top: 20px; }

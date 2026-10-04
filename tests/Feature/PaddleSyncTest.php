@@ -60,7 +60,7 @@ class PaddleSyncTest extends TestCase
 
         $this->artisan('paddle:sync')->assertSuccessful();
 
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
         $this->assertSame('txn_1', CreditEntry::sole()->reference);
     }
 
@@ -73,7 +73,7 @@ class PaddleSyncTest extends TestCase
             ->expectsOutputToContain('missing')
             ->assertSuccessful();
 
-        $this->assertSame(0, $user->credits());
+        $this->assertSame(0, $user->creditsPurchased());
     }
 
     public function test_running_it_twice_grants_nothing_twice(): void
@@ -85,7 +85,7 @@ class PaddleSyncTest extends TestCase
         $this->artisan('paddle:sync');
         $this->artisan('paddle:sync');
 
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
         $this->assertSame(1, CreditEntry::count());
     }
 
@@ -97,7 +97,7 @@ class PaddleSyncTest extends TestCase
 
         $this->artisan('paddle:sync')->expectsOutputToContain('Nothing missing');
 
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
     }
 
     public function test_a_refund_the_webhook_missed_takes_its_credits_back(): void
@@ -114,7 +114,7 @@ class PaddleSyncTest extends TestCase
 
         $this->artisan('paddle:sync')->assertSuccessful();
 
-        $this->assertSame(0, $user->credits());
+        $this->assertSame(0, $user->creditsPurchased());
         // Nine of the ten were never spent; the one that was is taken back.
         $this->assertTrue($game->fresh()->isLocked());
         $this->assertSame(0, $user->availableCredits());

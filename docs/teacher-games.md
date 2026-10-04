@@ -265,6 +265,131 @@ In the builder, which has one rule: change the site, change these —
   - Every box in a square needs `min-width: 0` and a `minmax(0, 1fr)` column. A
     text input will not shrink below its default twenty characters, so without
     them each one hangs out past the side of its square.
+  - **Making a game is three steps, and the credit goes on the third.** The
+    form (`store`) only reads what kind of practice the description asks for
+    and redirects to a confirm screen (`confirm`); nothing exists and nothing
+    is charged until `begin`. The deck type was always worked out before
+    anything was written — this stops in between and SAYS so, because it is
+    the one decision a teacher cannot discover any other way: "the subjunctive"
+    is as true of a board of verb forms as of a board of whole sentences to
+    translate, and a teacher who did not know the second exists used to find
+    out after the credit was spent. The screen costs no extra model call (it
+    carries `store`'s classification in the session, and reflashes so a refresh
+    keeps it). `classified` rides along so `begin` can drop the classifier's
+    stated reason when the teacher picks something else — a reason given for a
+    deck nobody chose would be a lie on the edit screen.
+    **The screen is skipped unless there is really something to choose.** It
+    exists for one question — does the class recall items, or produce whole
+    sentences — and that is the only choice a teacher cannot discover any other
+    way. Words versus verb forms versus little words is not that question; it
+    is our own distinction about how a pack is BUILT, which this form
+    deliberately stopped asking about. So a **bingo never sees the screen**:
+    every deck it can play asks the same thing of the class, and it would be
+    shown three cards it has no basis to choose between on the way to what it
+    asked for. The test is read off the decks (`answerIsOpen`, which is what
+    makes an answer something the teacher judges rather than a bank face to
+    match) and not hardcoded, so a quiz-only deck added later turns the screen
+    on by itself. Fewer than two decks skips it too — the registry comes over
+    the node bridge, which can be down, and a confirm screen with an empty
+    picker is a dead end whose one button posts a `type` that is required and
+    absent.
+    **The confirm form carries `data-once`, and the create form still does.**
+    The credit moved to the second press, so the guard had to move with it;
+    without it the button posted once per click with nothing on screen to say
+    the first press worked, which is exactly what invites the second. `once.js`
+    also swaps the label to "Making it…", which is the only progress the page
+    shows. Measured: three clicks in one tick, one submit reaches the server.
+  - **A sentence keeps the article it starts with.** `TeacherGame::tidyItems`
+    splits "la camisa" into an article and a face, which is right for a word
+    and wrong for a whole sentence: "La enfermera trabaja en el hospital" came
+    back as article "la" and a face beginning "enfermera", which is not what
+    the board answers with and matches nothing in the bank. The deck decides,
+    through `stripsArticles` on the payload — stored only when FALSE, because
+    splitting is what every deck did before sentences existed and absent has to
+    keep meaning "split". It surfaced as `Undefined array key "article"` (the
+    old code read `$item['article'] ?: …`, which does not guard a missing key),
+    and that crash is the only reason the corruption was never saved: every
+    sentence generated before it began "Si", so the regex never matched.
+  - **A game's kind is "jeopardy"; a deck type calls the same thing "quiz".**
+    `decksFor()` does the rename, as `classifyPrompt` does on the way into the
+    model, and the editor does in `deckTypeRow`. Without it nothing matches a
+    quiz at all and every quiz silently falls back to vocabulary — which is
+    exactly what happened, and what the confirm screen's own test caught.
+  - **Switching the deck type of a game that is already WRITTEN is not free,
+    and says so.** The clues stay as they are and are then read under another
+    deck's rules: a vocabulary board switched to whole sentences keeps
+    twenty-five one-word clues and passes every check, because the sentence
+    deck exempts three rows from the bank test. Two things now happen.
+    `dropOrphanedEnglish` removes `promptEn` from rows the new deck has no box
+    for — the text does not go away by being hidden, and the game shows *Ver en
+    inglés* whenever a clue HAS one, so a teacher would watch the English
+    vanish from their screen and the class would read it mid-game. Then
+    `switchedNote` says the clues were written for the other activity, and on a
+    DRAFT offers to rewrite the board (a quiet save first, then `write`, which
+    replaces the whole pack). On a published game it says what to fix by hand
+    instead, because `write` is refused there and a button that cannot work is
+    worse than none.
+  - **Which rows are read aloud is a strip above the board, one switch per
+    ROW** — never a switch on a square. A row is heard in every category or in
+    none (`validateBoard` refuses anything else: the money is a promise about
+    difficulty, so a row heard in two columns and shown in three breaks it), so
+    a per-square control would mostly build boards the checks reject. Five
+    controls rather than twenty-five, and an invalid board is unreachable; the
+    square keeps a read-only **heard** badge.
+  - **A switch is labelled by its money alone — "Row $400", never "dictation".**
+    The first version printed each rung's form from the deck registry, which is
+    a fact about the pack AS GENERATED and not about the board in front of the
+    teacher: every clue here is editable, so the row the registry calls a
+    dictation may have been rewritten into anything. The money is the one label
+    that stays true, and it is already printed on all five squares of the row.
+    To answer "which squares am I about to change?" the switch LIGHTS its row
+    (`.row-lit`, from `data-value` on each cell) while the pointer or the
+    keyboard is on it — the board scrolls sideways, so the question is fair
+    even with the money on every square.
+  - **It is folded shut, and the summary IS the setting** — "Read aloud, not
+    shown: rows $400 and $500", or "nothing — every clue is on screen". Most
+    teachers come to fix a clue and never open it, and open it costs a line on
+    a laptop but a third of the screen on a phone, above the board they came
+    for. Folded it costs one line everywhere, and the common case — wanting to
+    KNOW which rows are heard rather than change them — needs no tap at all.
+    It stays ABOVE the board rather than moving below it: below costs nothing
+    to scroll past but hides it, since on a phone the board is some eight
+    hundred pixels of squares and the only hint the feature exists is the
+    `heard` badge ON a square, pointing at a control nowhere near it. Row
+    lighting needs the switch and its row on screen together, too. The open
+    state is held in `heardFoldOpen` for the same reason as
+    `shownWhatAWordHolds` — an Ask AI reply re-renders the page, and a teacher
+    who opened it should not find it shut underneath them.
+  - **The strip has its own breakpoint at 660px, not the board's 720**, because
+    660 is where the five switches were measured to run out of room; between
+    the two they would otherwise sit in a ragged wrapped line. (It was 780
+    while the strip carried its own inline label, before the fold's summary
+    took that text — worth re-measuring if the switches ever change.)
+    Below it they become a grid
+    (`repeat(auto-fit, minmax(104px, 1fr))`) rather than a wrapped flex row, so
+    a short last line stays in column, and each one is padded to a finger —
+    the desktop layout's hit area is a 13px checkbox. Two columns on an
+    ordinary phone is forced, not a preference: 390px leaves 280px of card and
+    three columns of that are 88px against text needing 90. The alternative was
+    shrinking the type, which is wrong for a control read at arm's length over
+    a desk.
+  - Turning one OFF warns instead of blocking: the rungs come in pairs —
+    vocabulary's heard $400 is the $200 definition minus the reading — so
+    showing it can leave two rows asking the same thing the same way. A teacher
+    with no speakers may want exactly that. The warning is driven by
+    `ladderForms` from the deck registry, paired with the board's own values by
+    position, so it knows a sentence pack's dictation duplicates nothing. It is
+    worded **"As written, $400 was $200 without the text… check the two rows
+    don't now ask the same thing"** for the same reason the labels are generic:
+    how the pack was written is all this can know, so it says that and asks the
+    teacher to look, rather than asserting what the rows hold today.
+    **The editor is the only place this is asked.** The quiz setup screen
+    briefly offered the same choice per period (*Sin audio* / *Como está
+    escrito* / *Todo en voz alta*) and it was removed: silencing a row at play
+    time quietly collapses it onto another, in front of a class, with nothing
+    on screen to say so, and it did not reach the printed script either. The
+    one case that screen had to answer — a browser with no Spanish voice —
+    needs no control, because `heard()` falls back to showing the clue.
   - Retyping an answer moves the English with it, and an answer the bank has
     never heard of offers **+ add “…” to the vocabulary list** — otherwise the
     list the class reviews quietly loses a word the board asks for.
@@ -360,11 +485,19 @@ In the builder, which has one rule: change the site, change these —
 
 ### How money becomes credits — built
 
-- **`credit_entries` is a ledger**, one row per movement, never edited or
-  deleted: `purchase`, `spend`, `refund`, `admin`. The balance is the sum of
-  the rows, so it cannot disagree with the history. A unique index on
+- **`credit_entries` is a ledger of MONEY**, one row per movement, never
+  edited or deleted: `purchase`, `refund`, `admin`. A unique index on
   (reason, reference) is what makes a webhook delivered twice credit once —
   Paddle retries anything it does not hear back from.
+- **The balance is not the ledger's sum**, and `credit_units` is why: a credit
+  is a row there pointing at the game it went on, so spending one writes
+  nothing to the ledger. The sum of the deltas is what a teacher has BOUGHT.
+  **Anything that shows a teacher or an admin "your credits" reads
+  `availableCredits()`** — units with no game — and names credits held by
+  drafts separately. The buy page and both admin screens once showed the
+  ledger total, so a teacher who had spent all ten was told they had ten and
+  then sent to the buy page when they pressed create. `creditsPurchased()` is
+  named for what it is and is for reconciling with Paddle, nothing else.
 - **The webhook is the only way money reaches the site** (`PaddleWebhookController`),
   whoever started it: a refund pressed in Paddle's dashboard and one started
   from our own admin screens both arrive here, so an account ends in the same

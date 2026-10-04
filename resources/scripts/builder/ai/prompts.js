@@ -631,7 +631,7 @@ Only return valid JSON, nothing else.`;
  * caller that does not know about types yet still gets the wording it always
  * got. See src/deckTypes.js for why the registry is shapes and not grammar
  * points. */
-const { deckType, NOT_A_QUESTION_TYPE } = require('../deckTypes');
+const { deckType, DECK_TYPES, NOT_A_QUESTION_TYPE } = require('../deckTypes');
 
 /* The item bank both games are built from.
  *
@@ -709,11 +709,68 @@ ${type.itemsTask(topic, count)}
 ${type.itemRules}`;
 }
 
+/* Which KIND of bank this game needs, from what the teacher said.
+ *
+ * The website used to ask outright, with a card per deck type. That put our own
+ * taxonomy in front of a teacher who has no reason to know it: "verb and word
+ * forms" versus "little words" is a distinction about how a pack is BUILT, and
+ * the person making a bingo game for Tuesday should not have to learn it. So
+ * they describe the lesson instead and this picks the shape.
+ *
+ * The menu is generated from the registry, so a deck type added there is
+ * classifiable the moment it exists — nothing here, on the form, or in PHP has
+ * to be told about it.
+ *
+ * Measured on a first draft before it shipped: 12/12 on ordinary topics and
+ * 10/12 on deliberately awkward ones, with both misses on input that is genuinely
+ * two things at once. The two rules below are what those misses taught —
+ * the description outranks the topic, and a mixed lesson is judged on what the
+ * child is actually made to produce. Vague input ("Unit 3", "Repaso") correctly
+ * fell back to vocabulary every time, which is why that fallback is stated
+ * rather than left to the model's judgement.
+ *
+ * A wrong answer is cheap but not free: it is one call, and the site shows what
+ * was chosen and lets the teacher change it. It must never be a hard error.
+ */
+function buildDeckTypePrompt(topic, describe = '', kind = '') {
+  /* Only the kinds this game can actually be.
+   *
+   * A bingo face is printed in a small square, so a deck of whole sentences is
+   * not a choice a bingo game has. Offering it anyway would let a teacher's
+   * description pick a type their game cannot build — and they chose the game
+   * first, on the screen before this. With no kind given, everything is on the
+   * menu. */
+  const menu = Object.values(DECK_TYPES)
+    .filter(t => !kind || !t.games || t.games.includes(kind))
+    .map(t => `- "${t.id}": ${t.blurb}`)
+    .join('\n');
+
+  return `A Spanish teacher is making a classroom game. Decide which KIND of bank it needs.
+
+THE TOPIC THEY TYPED: "${topic}"
+WHAT THEY SAID IT IS FOR: "${describe || '(they did not say)'}"
+
+The kinds:
+${menu}
+
+Decide by what goes ON A CARD — the thing the child has to produce:
+- a WORD they are learning the meaning of → "vocabulario"
+- an inflected FORM of a word: a conjugated verb, a plural, an adjective made to agree, a command → "forma"
+- a small word that fills a slot: a preposition, a question word, an object pronoun → "palabra"
+
+Three rules, in this order:
+1. Where the topic and the description disagree, follow the DESCRIPTION. The topic is a label typed in a hurry; the description is the teacher saying what the lesson is actually for.
+2. Where a lesson is two things at once — "family members and possessive adjectives" — choose the one the child spends most of the game PRODUCING, not the one mentioned first.
+3. Where nothing clearly points at a form or a small word, answer "vocabulario". It is the most general kind and what most games are. A topic you cannot place is a vocabulary topic.
+
+Return JSON only: {"type": "...", "why": "a short line a teacher would understand, naming what the game will ask them to produce"}`;
+}
+
 function buildGameItemsPrompt(topic, count = 30, type = deckType()) {
   return `${gameItemsBody(topic, count, type)}
 
 Return your response as JSON in this format:
-{"items": [${type.itemShape}]}
+{"items": [${type.itemShape}]${type.itemsAlso || ''}}
 Return exactly ${count} items. Only return valid JSON, nothing else.`;
 }
 
@@ -726,7 +783,7 @@ Return exactly ${count} items. Only return valid JSON, nothing else.`;
  * so the check has to ask what could actually fill the gap, which means asking
  * a model.
  */
-function buildGapAuditPrompt(items) {
+function buildGapAuditPrompt(items, type = deckType()) {
   const bank = items.map(i => i.face).join(', ');
   const entries = auditEntries(items);
   const numbered = entries
@@ -746,7 +803,7 @@ For EACH clue answer THREE separate questions.
 
 1. "fits": which words from the list above the clue could point at — for a gap, which could fill it; for a description, which it could describe. Judge only against the list. A clue is fine when exactly one does; two or more means a child holding a card has two right answers and no way to choose.
 
-2. "specific": could someone who has NEVER SEEN the list still land on the intended word, from the clue alone? Judge this without the list. "Voy al ___" is not specific — a dozen places fit it — even when only one of them happens to be on the list. "Voy al ___ a comprar pescado fresco" is. The quiz game gives children no list at all, so a clue that only works by elimination does not work there.
+2. ${type.auditSpecific}
 
 3. "hard": any word in the clue, other than the answer, that a beginner learning Spanish is unlikely to know AND that is harder than the answer itself. A clue harder than its answer cannot lead a child to it: "Objeto duro que se pone para no lastimarse el cráneo" for "casco" is hard because of "cráneo" and "lastimarse". Most clues should have none; do not list ordinary words.
 
@@ -840,7 +897,7 @@ ${type.boardGrouping(categoryCount, 'Invent')}
 
 ${boardRules(categoryCount, cluesPerCategory, type)}
 
-${finalRules(`$${cluesPerCategory * 100}`)}`;
+${finalRules(`$${cluesPerCategory * 100}`, type)}`;
 }
 
 /* Everything a board must meet once its categories exist. Shared with the
@@ -870,7 +927,7 @@ For each clue give:
 - "value": the dollar amount
 - "prompt": the clue itself, in the form its row requires
 - "answer": ${type.boardAnswerField}
-- "promptEn": the English of the prompt, for a teacher to reveal if a class is stuck. Keep the ___ in place for a gap clue. Omit this for the $100 row, whose prompt is already English.
+${type.promptEnField}
 - "audio": true on the ${audioValues.join(' and ')} rows only, so the screen reads those aloud instead of showing them.
 
 ${type.boardClueRules()}
@@ -906,7 +963,7 @@ No two clues anywhere on the board may share an answer, and a clue must never co
  */
 const { MAX_FINAL_CATEGORY_CHARS } = require('../jeopardyBoard');
 
-function finalRules(topValue) {
+function finalRules(topValue, type = deckType()) {
   return `THE FINAL WAGER — "La Apuesta Final".
 After the board is empty, every team bets some of its money on ONE last clue. They see the category first, bet, and only then see the clue; a right answer wins the bet and a wrong one loses it.
 
@@ -916,9 +973,9 @@ Write that one clue, as "final":
   The test: count how many words of the vocabulary list could be the answer to this category. Fewer than three or four and it is too narrow — name the AREA, not the THING.
   Too narrow: "El instrumento de cuerdas" (only one word on the list can be that).
   Better: "La música de la fiesta" — a team knows whether it studied this ground, and several words still fit.
-- "prompt": a Spanish sentence with the answer replaced by ___ (three underscores), written to all the rules above. It is shown on screen, never read aloud.
-- "promptEn": the English of the sentence, with the ___ in the same place.
-- "answer": the Spanish word from the vocabulary list, bare and without its article.
+${type.finalPromptField}
+${type.finalPromptEnField}
+- "answer": ${type.finalAnswerField}
 
 Its answer must be a word NO square on the board uses. Every team has just played through the board, so an answer already seen there is one they have been handed.
 
@@ -992,7 +1049,7 @@ Group those words into ${categoryCount} categories by meaning — people, places
 
 ${boardRules(categoryCount, cluesPerCategory, type)}
 
-${finalRules(`$${cluesPerCategory * 100}`)}
+${finalRules(`$${cluesPerCategory * 100}`, type)}
 
 Every answer on the board must be one of the words you chose, and every word you chose must be used exactly once — on a square, or as the final wager's answer.
 
@@ -1130,7 +1187,7 @@ ${type.boardGroupingShort}
 
 ${boardRules(categoryCount, cluesPerCategory, type)}
 
-${finalRules(`$${cluesPerCategory * 100}`)}
+${finalRules(`$${cluesPerCategory * 100}`, type)}
 
 ${freshWriting('the bingo pack')}
 
@@ -1322,16 +1379,55 @@ Exactly ${count} items, exactly ${categoryCount} categories of ${cluesPerCategor
  * The pack's own room code is never passed in. The listing is public, and the
  * code opens every answer; the demo room is the only link a listing may carry.
  */
+/* How each rung reads in a sentence a shopper understands.
+ *
+ * The listing has to say what the board actually asks, and that is no longer one
+ * fixed sentence: a vocabulary board climbs translation to heard gap, a board of
+ * verb forms climbs formula to transformation. A listing that promises the wrong
+ * ladder describes a product the buyer does not receive, which this repo counts
+ * as a refund — so the fact is BUILT from the deck type's ladder rather than
+ * written out, and a new type cannot forget to update it.
+ */
+const FORM_PHRASES = {
+  translation: 'a translation',
+  definition: 'a Spanish definition',
+  gap: 'a sentence with a gap',
+  formula: 'a formula to build the form from',
+  english: 'the English to put into Spanish',
+  transformation: 'one form to turn into another',
+  'two-sentence': 'two sentences that share one word',
+  function: 'what the little word does',
+  comprehension: 'a Spanish sentence to say the meaning of',
+  'translation-change': 'an English sentence to put into Spanish with one change applied',
+  /* A dictation is normally in the HEARD half of the sentence below and never
+   * reaches this map — but a teacher can now switch that row to shown in the
+   * editor, and a rung with no phrase here is advertised as "a clue". */
+  dictation: 'a Spanish sentence to write down word for word',
+};
+
+function ladderFact(type) {
+  const rungs = type.ladder.map((rung, i) => ({ ...rung, value: (i + 1) * 100 }));
+  // "is" on the first only, so the sentence reads as a list rather than
+  // repeating the verb five times.
+  const read = rungs.filter(r => !r.audio)
+    .map((r, i) => `$${r.value} ${i === 0 ? 'is ' : ''}${FORM_PHRASES[r.form] || 'a clue'}`);
+  const heard = rungs.filter(r => r.audio).map(r => `$${r.value}`);
+  const many = heard.length > 1;
+  const listen = heard.length
+    ? ` ${heard.join(' and ')} ${many ? 'are LISTENING clues' : 'is a LISTENING clue'} the site reads aloud without showing the text — at an adjustable speed, and it can repeat ${many ? 'them' : 'it'}.`
+    : '';
+  return `Difficulty rises with the value in every category: ${read.join(', ')}.${listen}`;
+}
+
 const GAME_LISTING_FACTS = {
   quiz: [
     'Plays in any web browser on the classroom projector or smartboard: open spanishclassprintables.com and type the code from the Play Online sheet that comes with the download. Nothing to install and no student accounts or devices — students answer on paper.',
     'The website runs the whole game: 2 to 8 teams, whose turn it is, the score for every team, a writing timer the teacher starts at 30 or 45 seconds, and a Daily Double hidden on the board.',
-    'Difficulty rises with the value in every category: $100 is a translation, $200 a Spanish definition, $300 a sentence with a gap, and $400 and $500 are LISTENING clues the site reads aloud without showing the text — at an adjustable speed, and it can repeat them.',
     'The whole word list goes up on screen to review before the game, with the English beside each word and every word said aloud in Spanish when it is tapped, so the class can go through it together without printing the word list. The same list opens again at any moment during the game as a quick reminder, with the English one tap away.',
     'The review also runs as flashcards, one word at a time: a card starts in Spanish (hear it, say it back) or in English (the class says the Spanish before the card turns), in list order or shuffled. It can run by itself, saying each word and pausing for the class to repeat it, so the teacher is free to walk the room. The automatic voice can be switched off, and any word can still be heard with one tap.',
     'Made to feel like a game show: every team is dealt an animal mascot with a Spanish team name (Los Tigres, Las Ranas…), and the board has sound effects, confetti for every right answer, a countdown ring for the timer, and a full-screen Daily Double reveal that shows the value doubling. One button turns the sound effects off.',
     'Ends on a final wager round, La Apuesta Final: the teams see the category, each bets as much of its money as it dares, and then one last clue decides the game. A team with little or nothing left may still bet up to the value of the biggest square, so every team goes into the last question with a way back — and no team can finish below zero. The website takes the bets, checks each one against what the team can afford, and does the adding and subtracting itself.',
-    'The questions can be changed online to suit the class: add this game at spanishclassprintables.com with the code from the download, then edit any clue, answer or word. The website plays your version from then on, and the printed pages in this download stay exactly as they are.',
+    'The questions can be changed online to suit the class: add this game at spanishclassprintables.com with the code from the download, then edit any clue, answer or word, and choose which rows are read aloud instead of shown — turn the listening clues off for a room with no speakers, or switch more of them on to drill listening. The website plays your version from then on, and the printed pages in this download stay exactly as they are.',
     'The teacher stays in charge of the scoreboard: tap any team to fix its score — for a point awarded to the wrong team, an answer argued out afterwards, or a bonus the game has no square for.',
     'Keeps every team in the race: a crown marks the team in the lead, the screen announces "¡Nuevo líder!" when the lead changes hands, a flame marks a team on a streak of three right answers, and the game ends on a podium that names every team\'s place.',
     'Every team writes an answer to every clue on its own answer sheet, so the whole class works on every question, not just the team that picked it.',
@@ -1357,7 +1453,21 @@ function buildGameListingPrompt(pack) {
     cardCount = 0, cardSizes = '', cardPages = 0, clueCount = 0, categoryNames = [],
   } = pack;
   const isQuiz = kind === 'quiz';
-  const facts = (GAME_LISTING_FACTS[kind] || []).map(f => `- ${f}`).join('\n');
+  /* The ladder fact is generated from the pack's own deck type and goes first,
+   * where the hardcoded one used to sit. */
+  const type = deckType(pack.type);
+  /* A deck whose answers are open says so in the listing.
+   *
+   * A buyer who expects the screen to mark every answer right or wrong, and
+   * finds a game where the teacher judges, has been mis-sold — and the judging
+   * is a selling point rather than a caveat, so it is stated as one. */
+  const marking = type.answerIsOpen
+    ? ['Some sentences can be translated more than one way, and the teacher decides: the screen shows one correct answer and tells the class another may count, which turns a near miss into a moment to explain why a different wording works. The game keeps the score either way.']
+    : [];
+  const factList = isQuiz
+    ? [ladderFact(type), ...marking, ...(GAME_LISTING_FACTS[kind] || [])]
+    : (GAME_LISTING_FACTS[kind] || []);
+  const facts = factList.map(f => `- ${f}`).join('\n');
   const vocabList = words.map(w => `${w.es} (${w.en})`).join(', ');
   const counts = isQuiz
     ? `Board: ${categoryNames.length} categories (${categoryNames.join(', ')}), ${clueCount} clues.`
@@ -1463,6 +1573,7 @@ module.exports = {
   buildGameListingPrompt,
   buildQuizGamePrompt,
   buildGameItemsPrompt,
+  buildDeckTypePrompt,
   buildGamePackPrompt,
   buildGapAuditPrompt,
   buildFormAuditPrompt,
@@ -1482,4 +1593,9 @@ module.exports = {
   buildListingPrompt,
   SOURCE_TYPE_LABELS,
   PAGE_DESCRIPTIONS,
+  // What each rung asks for, in a few words. Exported for /api/deck-types, so
+  // the builder's own steps describe the deck in front of the seller instead
+  // of hardcoding vocabulary's ladder; it is the same wording that goes in the
+  // public listing (see ladderFact), not prompt text.
+  FORM_PHRASES,
 };

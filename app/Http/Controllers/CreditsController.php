@@ -17,10 +17,18 @@ use Illuminate\View\View;
  */
 class CreditsController extends Controller
 {
+    /*
+     * The balance here is availableCredits(), the same count the create screen
+     * gates on, and NOT the ledger total — this page said "10 credits" to a
+     * teacher whose ten were all spent, and sent them here when they pressed
+     * create. Drafts are named separately because a held credit is neither
+     * spent nor spendable, and a teacher told only "9" would be missing eight.
+     */
     public function show(Request $request): View
     {
         return view('credits.buy', [
-            'credits' => $request->user()->credits(),
+            'credits' => $request->user()->availableCredits(),
+            'held' => $request->user()->heldCredits(),
             'packs' => $this->packs(),
             'token' => (string) config('paddle.client_token'),
             'environment' => (string) config('paddle.environment'),
@@ -37,7 +45,7 @@ class CreditsController extends Controller
      */
     public function balance(Request $request): JsonResponse
     {
-        return response()->json(['credits' => $request->user()->credits()]);
+        return response()->json(['credits' => $request->user()->availableCredits()]);
     }
 
     /**

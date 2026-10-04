@@ -100,12 +100,19 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/my-games', [TeacherGameController::class, 'index'])->name('my-games');
 
-        // Making a game: choosing what it is, then writing it — by hand, or by
-        // asking a model. The credit goes at `store`, before anything is
-        // written, so every model call has one behind it.
+        /* Making a game, in three steps: the form, then what we read from it,
+         * then the making. `store` only classifies and shows its answer —
+         * nothing exists and nothing is charged until `begin`, so a teacher who
+         * meant a different activity can say so before paying for this one.
+         * Both are throttled: `store` costs a small model call, `begin` a
+         * credit. `/new` and `/confirm` sit above no {game} route, so neither
+         * can be read as an id. */
         Route::get('/my-games/new', [TeacherGameController::class, 'create'])->name('my-games.create');
         Route::post('/my-games', [TeacherGameController::class, 'store'])
             ->middleware('throttle:30,1')->name('my-games.store');
+        Route::get('/my-games/confirm', [TeacherGameController::class, 'confirm'])->name('my-games.confirm');
+        Route::post('/my-games/confirm', [TeacherGameController::class, 'begin'])
+            ->middleware('throttle:30,1')->name('my-games.begin');
         Route::post('/my-games/{game}/write', [TeacherGameController::class, 'write'])
             ->middleware('throttle:20,1')->name('my-games.write');
         Route::get('/my-games/{game}/writing', [TeacherGameController::class, 'writingStatus'])->name('my-games.writing');

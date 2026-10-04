@@ -139,7 +139,10 @@ function validateBoard(board, expected = {}) {
   });
 
   if (Array.isArray(expected.items) && expected.items.length) {
-    answersOutsideBank(board, expected.items).forEach(({ category, value, answer }) => {
+    // `stripArticles` comes from the deck type; absent means the old behaviour.
+    const strip = expected.stripArticles !== false;
+    const exempt = expected.bankExemptValues instanceof Set ? expected.bankExemptValues : new Set();
+    answersOutsideBank(board, expected.items, strip, exempt).forEach(({ category, value, answer }) => {
       problems.push(`"${category}" ${value}: answer "${answer}" is not in the word bank`);
     });
   }
@@ -156,20 +159,24 @@ function validateBoard(board, expected = {}) {
  * topic's board when a new bank was generated, and nothing compared the two.
  * Separate from validateBoard so a build can refuse on exactly this.
  */
-function answersOutsideBank(board, items) {
-  const faces = new Set((items || []).map(i => bare(i && i.face)).filter(Boolean));
+function answersOutsideBank(board, items, strip = true, exempt = new Set()) {
+  const faces = new Set((items || []).map(i => bare(i && i.face, strip)).filter(Boolean));
   if (!faces.size) return [];
   const outside = [];
   ((board && board.categories) || []).forEach((cat, ci) => {
     (cat.clues || []).forEach(clue => {
-      const answer = bare(clue && clue.answer);
+      // Rows whose answer is BUILT from a bank entry rather than copied from it
+      // — a translation of one, or one with a change applied. See `fromBank` on
+      // the deck type's ladder; the caller turns that into these values.
+      if (exempt.has(Number(clue && clue.value))) return;
+      const answer = bare(clue && clue.answer, strip);
       if (answer && !faces.has(answer)) {
         outside.push({ category: cat.name || `category ${ci}`, value: clue.value, answer: clue.answer });
       }
     });
   });
   const final = board && board.final;
-  const finalAnswer = bare(final && final.answer);
+  const finalAnswer = bare(final && final.answer, strip);
   if (finalAnswer && !faces.has(finalAnswer)) {
     outside.push({ category: final.category || 'the final wager', value: 'final', answer: final.answer });
   }
@@ -181,10 +188,19 @@ function normalize(value) {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-// Faces are stored bare and answers are asked for bare, but either may arrive
-// with its article ("el casco"), and that is not a different word.
-function bare(value) {
-  return normalize(value).replace(/^(el|la|los|las)\s+/, '');
+/* Faces are stored bare and answers are asked for bare, but either may arrive
+ * with its article ("el casco"), and that is not a different word.
+ *
+ * Not for every deck. Where an answer is a SENTENCE the leading article belongs
+ * to it — "La enfermera trabaja en el hospital" is not the same string as
+ * "enfermera trabaja en el hospital", and stripping it makes the bank check
+ * compare two things that were never meant to match. `strip` is false for those
+ * types; it stays true by default so every caller written before them keeps the
+ * behaviour it was written against.
+ */
+function bare(value, strip = true) {
+  const text = normalize(value);
+  return strip ? text.replace(/^(el|la|los|las)\s+/, '') : text;
 }
 
 // `bare` is exported for the website's editor, which pairs each answer with the

@@ -71,6 +71,16 @@
    * spring back open the next time anything redraws. */
   let shownWhatAWordHolds = false;
 
+  /* Whether the read-aloud fold is open, for the same reason: it starts shut,
+   * but an Ask AI reply or a new word re-renders the page, and a teacher who
+   * opened it to change a row should not find it closed underneath them. */
+  let heardFoldOpen = false;
+
+  /* The deck type a teacher has just switched a WRITTEN game to, or null.
+   * Survives the re-render that the switch itself causes, so the page can say
+   * what the change costs; cleared once they act on it. */
+  let typeJustChanged = null;
+
   const state = el('span', 'state');
 
   start();
@@ -425,9 +435,22 @@
    * their own, and there are usually four of them.
    */
   function render() {
+    renderInner();
+    // Everything is in the document now, so the grown boxes can be measured.
+    fitAllBoxes();
+  }
+
+  function renderInner() {
     root.innerHTML = '';
     root.append(bar(), checksPanel());
     if (isDraft) root.append(draftBar());
+
+    /* What kind of bank this game uses, near the top because it governs the
+     * whole page — the fields a word is edited through AND how the board's
+     * clues climb. It cannot live in the words card: a quiz does not render
+     * one, and a quiz is exactly where a wrong guess is hardest to spot. */
+    const deck = deckTypeRow();
+    if (deck) root.append(deck);
 
     const games = game.games || {};
     const hasWords = Array.isArray(game.items) && game.items.length;
@@ -446,7 +469,10 @@
     }
 
     if (games.jeopardy && answerSheetAvailable) root.append(answerSheetNote());
-    if (hasWords && !games.bingo) root.append(unusedWordsCard());
+    /* A sentence pack has no spare WORDS to review — its entries are the
+     * answers, and the thing the class studies is the glossary beside them. */
+    if (isSentenceDeck()) root.append(primerCard());
+    else if (hasWords && !games.bingo) root.append(unusedWordsCard());
 
     check();
   }
@@ -457,6 +483,62 @@
    * somewhere — but they are the exception, not the page. A quiz pack carries
    * about four.
    */
+  /* The words the class goes over before a sentence game.
+   *
+   * The pack's entries are the sentences the board asks for, so the usual list
+   * of spare entries would be a list of answers under the heading "words your
+   * class can review". What a sentence game's class actually needs is the
+   * vocabulary the sentences are built from — which the pack already carries as
+   * its `reference`, and which is what the room shows when the teacher presses
+   * Vocabulario. Editable here, because a teacher who changes a sentence may
+   * want to change what is handed out with it.
+   */
+  function primerCard() {
+    const ref = game.reference && Array.isArray(game.reference.rows) ? game.reference : null;
+
+    const fold = el('details', 'card fold');
+    fold.append(el('summary', '', 'Words your class sees before the game'
+      + (ref ? ' (' + ref.rows.length + ')' : '')));
+
+    const body = el('div', 'words');
+    if (!ref || !ref.rows.length) {
+      body.append(el('p', 'lead', 'This pack has no word list yet. Your class will go into the game without one — the sentences themselves are the answers, so they are never shown.'));
+      fold.append(body);
+      return fold;
+    }
+
+    body.append(el('p', 'lead', 'The class sees these before playing, and whenever you press Vocabulario during the game. The sentences are the answers, so they are never shown.'));
+
+    const list = el('div', 'word-list compact');
+    ref.rows.forEach((row, i) => {
+      const line = el('div', 'word-row');
+      const head = el('div', 'word-head');
+      head.append(el('span', 'n', String(i + 1)));
+      head.append(textField('face', 'Spanish', row[0] || '', v => { row[0] = v; touched(); }));
+      head.append(textField('en', 'English', row[1] || '', v => { row[1] = v; touched(); }));
+
+      const drop = el('button', 'drop');
+      drop.type = 'button';
+      drop.title = 'Remove this word';
+      drop.textContent = '✕';
+      drop.onclick = () => { ref.rows.splice(i, 1); touched(); render(); };
+      head.append(drop);
+
+      line.append(head);
+      list.append(line);
+    });
+    body.append(list);
+
+    const add = el('button', 'btn-add');
+    add.type = 'button';
+    add.textContent = '+ add a word';
+    add.onclick = () => { ref.rows.push(['', '']); touched(); render(); };
+    body.append(add);
+
+    fold.append(body);
+    return fold;
+  }
+
   function unusedWordsCard() {
     const spare = game.items.filter(item => !answerFor(item));
     if (!spare.length) return document.createComment('');
@@ -568,6 +650,154 @@
 
   /* ---------- the words ---------- */
 
+  /* What kind of bank this game uses, and a way to correct it.
+   *
+   * The teacher was never asked — they described the lesson and the kind was
+   * read from that (Builder::classify). So it has to be SAID somewhere, or a
+   * wrong guess is invisible: the words simply have fields they did not expect,
+   * with nothing on the page to explain why or to change it.
+   *
+   * It sits above the words because that is what it governs. On an EMPTY game
+   * changing it is free: it only decides which fields the words will be edited
+   * through and how a later AI pass writes them.
+   *
+   * On a game that is already written it is not free, and this used to pretend
+   * it was. The clues stay exactly as they are and are then read under another
+   * deck's rules — so a vocabulary board switched to whole sentences keeps
+   * twenty-five one-word clues, passes every check (the sentence deck exempts
+   * three rows from the bank test), and silently loses the English on fifteen
+   * of them: the editor stops drawing those boxes while the game goes on
+   * showing their text. So the switch now says what it will cost and offers to
+   * rewrite the board for the deck that was picked.
+   */
+  function deckTypeRow() {
+    let types = [];
+    try { types = JSON.parse(root.dataset.deckTypes || '[]'); } catch { types = []; }
+
+    /* Only the decks this game can actually be played as. A sentence deck is
+     * quiz-only, and a bingo game offered it would be a game with no way to
+     * call a card. The create screen filters the same list the same way.
+     *
+     * The payload calls the quiz "jeopardy" and a deck type calls it "quiz" —
+     * the same rename `classifyPrompt` does on the way into the classifier. */
+    const plays = Object.keys((game && game.games) || {})
+      .map(k => (k === 'jeopardy' ? 'quiz' : k));
+    types = types.filter(t => {
+      const can = t.games || ['bingo', 'quiz'];
+      return plays.every(k => can.includes(k));
+    });
+    if (types.length < 2) return null;
+
+    const current = (game && game.type) || 'vocabulario';
+    const row = el('div', 'card deck-type');
+    const now = types.find(t => t.id === current) || types[0];
+
+    const said = el('p', 'deck-type-now');
+    said.append(el('strong', '', now.label));
+    if (game && game.typeWhy) said.append(document.createTextNode(' — ' + game.typeWhy));
+    row.append(said);
+
+    const change = el('button', 'deck-type-change', 'Not what you meant?');
+    change.type = 'button';
+    const picker = el('div', 'deck-type-picker');
+    picker.hidden = true;
+
+    change.onclick = () => { picker.hidden = !picker.hidden; };
+
+    types.forEach(t => {
+      const b = el('button', 'deck-type-option' + (t.id === current ? ' chosen' : ''));
+      b.type = 'button';
+      b.append(el('strong', '', t.label), el('em', '', t.blurb || ''));
+      b.onclick = () => {
+        if (t.id === current) { picker.hidden = true; return; }
+        // Vocabulary is the absent value everywhere else, so it is absent here.
+        if (t.id === 'vocabulario') delete game.type;
+        else game.type = t.id;
+        game.clueTypes = t.clueTypes || game.clueTypes;
+        /* Carried on the payload because the SERVER reads it without the
+         * registry to hand: it decides whether a later AI pass may split a
+         * leading article off an entry, which would behead a sentence. Absent
+         * means split, as it does for every game saved before sentences, so
+         * this is cleared rather than written false for the usual decks. */
+        if (t.stripsArticles === false) game.stripsArticles = false;
+        else delete game.stripsArticles;
+        // The guess no longer explains the answer once a teacher has overruled it.
+        delete game.typeWhy;
+        dropOrphanedEnglish(t);
+        typeJustChanged = written() ? t.id : null;
+        touched();
+        render();
+      };
+      picker.append(b);
+    });
+
+    if (typeJustChanged === current) row.append(switchedNote());
+
+    row.append(change, picker);
+    return row;
+  }
+
+  /** Whether this game has anything written in it yet. */
+  function written() {
+    const board = (game.games && game.games.jeopardy) || {};
+    return ((game.items || []).length > 0)
+      || ((board.categories || []).some(c => (c.clues || []).some(q => q.prompt)));
+  }
+
+  /* English the new deck has no box for.
+   *
+   * Which rows carry a translation is the deck's business (`promptEnValues`),
+   * so a switch can leave `promptEn` on rows the editor will no longer draw.
+   * The text does not go away by being hidden — the game shows "Ver en inglés"
+   * whenever a clue HAS one — so a teacher would see the English vanish from
+   * their screen, assume it was gone, and have the class read it mid-game.
+   * Drop it with the boxes, the way the dictation change dropped its stale
+   * values rather than leaving them for the room to find.
+   */
+  function dropOrphanedEnglish(type) {
+    const keep = type.promptEnValues;
+    if (!Array.isArray(keep)) return 0;
+    const board = (game.games && game.games.jeopardy) || {};
+    let dropped = 0;
+    (board.categories || []).forEach(cat => (cat.clues || []).forEach(clue => {
+      if (clue.promptEn && !keep.includes(Number(clue.value))) {
+        delete clue.promptEn;
+        dropped += 1;
+      }
+    }));
+    return dropped;
+  }
+
+  /* What a switch on a written game has just done, and the way out of it.
+   *
+   * The offer to rewrite is only shown where it can be honoured: `write`
+   * replaces the whole pack and the server allows it on a DRAFT alone, so on a
+   * published game this says what to fix by hand instead of offering a button
+   * that would be refused. */
+  function switchedNote() {
+    const note = el('div', 'deck-type-switched');
+    note.append(el('p', '', 'The clues on this board were written for the kind of practice you just changed away from. They are still here, word for word, and will not match what this deck asks for until they are rewritten.'));
+
+    if (isDraft && urls.write) {
+      const go = el('button', 'btn btn-primary', 'Rewrite the board for this');
+      go.type = 'button';
+      go.onclick = async () => {
+        /* Saved first, the same quiet save Ask AI and the card printing do:
+         * the job writes from the STORED payload, so an unsaved deck type
+         * would have it generate for the deck being replaced. */
+        go.disabled = true;
+        typeJustChanged = null;
+        if (dirty) await saveQuietly();
+        askAi(go);
+      };
+      note.append(go);
+      note.append(el('p', 'muted-note', 'This replaces every word and clue, and uses some of this credit\'s AI. Your topic and description stay as they were.'));
+    } else {
+      note.append(el('p', 'muted-note', 'This game is published, so it is not rewritten automatically — edit the clues below, or make a new game for this kind of practice.'));
+    }
+    return note;
+  }
+
   function wordsCard(folded) {
     const card = el('div', folded ? 'words' : 'card words');
     if (!folded) card.append(el('h2', '', 'Words'));
@@ -613,7 +843,12 @@
     const add = el('button', 'btn btn-ghost add', '+ Add a word');
     add.type = 'button';
     add.onclick = () => {
-      game.items.push({ face: '', article: '', en: '' });
+      // Born with the fields its deck actually uses, so a word added by hand
+      // carries the same clues as the ones that were generated.
+      const blank = { face: '', en: '' };
+      if (hasArticle()) blank.article = '';
+      if (hasFormula()) blank.prompt = '';
+      game.items.push(blank);
       touched();
       render();
       focusLast('.word-row .face');
@@ -629,13 +864,35 @@
 
   /* A word list is not obviously part of a quiz, and a teacher who only bought
    * the quiz wonders what it is doing here. Say which game it feeds. */
+  /* What the website can call a word out BY, named off the pack's own clue types
+   * rather than written out: a pack of verb forms is called by its formula, not
+   * by a definition, and a sentence describing the wrong clues is worse than one
+   * describing none. */
+  const CLUE_NAMES = {
+    prompt: 'a formula',
+    en: 'the English',
+    sentence: 'a sentence with a gap',
+    definition: 'a definition',
+  };
+
+  function clueList() {
+    const names = ((game && game.clueTypes) || []).map(id => CLUE_NAMES[id]).filter(Boolean);
+    if (!names.length) return '';
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1];
+  }
+
   function wordsPurpose() {
     const has = game.games || {};
+    const clues = clueList();
+    const noun = hasFormula() ? 'forms' : 'words';
     if (has.bingo && has.jeopardy) {
-      return 'The words both games are built from. Open one to see the sentence and definition the game reads out.';
+      return `The ${noun} both games are built from.`
+        + (clues ? ` Open one to see the clues the game reads out: ${clues}.` : '');
     }
     if (has.bingo) {
-      return 'The words on the bingo cards. Open one to see the three ways the website can call it out: the English, a sentence with a gap, or a definition.';
+      return `The ${noun} on the bingo cards.`
+        + (clues ? ` Open one to see the ways the website can call it out: ${clues}.` : '');
     }
     return 'The board’s answers all come from this list, and it is what your class sees when you press Vocabulario during the game. Change it if you rename a word or add an answer that is not here yet.';
   }
@@ -662,8 +919,9 @@
 
     head.append(open, el('span', 'n', String(index + 1)));
 
-    head.append(articleField(item));
-    head.append(textField('face', 'Spanish word', item.face || '', v => { item.face = v; touched(); }));
+    if (hasArticle()) head.append(articleField(item));
+    head.append(textField('face', hasFormula() ? 'Spanish form' : 'Spanish word',
+      item.face || '', v => { item.face = v; touched(); }));
     head.append(textField('en', 'English', item.en || '', v => { item.en = v; touched(); }));
 
     open.onclick = () => (row.classList.contains('open') ? close(row) : openOnly(row, list));
@@ -712,6 +970,10 @@
     // Each Spanish field beside its own English: they are read together when
     // checking one, and stacking them makes the row twice as tall for no gain.
     const detail = el('div', 'word-detail');
+    if (hasFormula()) {
+      detail.append(areaField('Formula (person + word + tense)', item.prompt || '',
+        v => { item.prompt = v; touched(); }));
+    }
     if ('sentence' in item || 'sentenceEn' in item) {
       detail.append(pair(
         areaField('Sentence with a gap (___)', item.sentence || '', v => { item.sentence = v; touched(); }),
@@ -761,6 +1023,9 @@
     const grid = el('div', 'board-grid');
     const cheapest = lowestValue(board);
     (board.categories || []).forEach((cat, ci) => grid.append(categoryColumn(cat, cheapest, ci)));
+
+    const heard = heardStrip(board, grid);
+    if (heard) card.append(heard);
 
     // On a phone the columns are wider than the screen, so the board scrolls
     // sideways one column at a time and this jumps between them.
@@ -851,6 +1116,170 @@
     return empty;
   }
 
+  /* Which rows the screen READS ALOUD instead of showing.
+   *
+   * One switch per ROW, not per square. A row is heard in every category or in
+   * none — the dollar value is a promise about difficulty, and a row that is
+   * heard in two columns and shown in three breaks it — so a switch on each
+   * square would mostly produce boards the checks refuse. Five controls rather
+   * than twenty-five, and an invalid board is unreachable.
+   *
+   * This is the AUTHORED setting, which is a different question from the one
+   * the game asks before it starts. There a teacher picks all, none, or as
+   * written, for one period, on one projector with no speakers. Here they
+   * change what the pack IS, for every period and for the printed script.
+   *
+   * Turning one OFF warns rather than blocks. The rungs come in pairs: the
+   * heard $400 of a vocabulary board is the $200 definition minus the reading,
+   * so showing it leaves two rows asking the same thing in the same way and
+   * the values stop meaning anything. A teacher may still want exactly that —
+   * a class with no sound — so it says what will happen and lets them.
+   *
+   * A switch is labelled by its MONEY alone, never by what the row holds.
+   * `ladderForms` says what each rung was WRITTEN as, and that is a fact about
+   * the pack as generated, not about the board in front of the teacher: every
+   * clue here is editable, so a row the registry calls a dictation may have
+   * been rewritten into anything. The money is the one label that stays true,
+   * and it is printed on all five squares of the row already. The forms are
+   * still worth having, but only for the warning below, which says "as
+   * written" out loud rather than asserting what is there now.
+   */
+  function heardStrip(board, grid) {
+    const forms = deckRow().ladderForms;
+    const categories = board.categories || [];
+    if (!categories.length) return null;
+
+    // Pair the ladder with the values the BOARD actually has, by position: a
+    // pack is free to use its own money, and the rungs climb in the same order
+    // whatever it is called.
+    const values = [...new Set(categories
+      .flatMap(c => (c.clues || []).map(q => Number(q.value) || 0)))]
+      .sort((a, b) => a - b);
+    if (!values.length) return null;
+
+    const isHeard = value => categories.some(c =>
+      (c.clues || []).some(q => Number(q.value) === value && q.audio));
+
+    /* Folded shut, with the setting itself as the summary.
+     *
+     * Most teachers never touch this — they came to fix a clue — and open it
+     * costs a line on a laptop but a third of the screen on a phone, above the
+     * board they actually came for. Folded it costs one line everywhere.
+     *
+     * It stays ABOVE the board rather than moving below it, which would cost
+     * nothing to scroll past but hide it: on a phone the board is some eight
+     * hundred pixels of squares, and the only hint the feature exists is the
+     * `heard` badge ON a square, which points at a control nowhere near it.
+     * The row-lighting needs the switch and its row on screen together, too.
+     *
+     * The summary is not a label but the current answer — "rows $400 and $500"
+     * — so the common case, wanting to KNOW rather than change, needs no tap. */
+    const fold = el('details', 'heard-fold');
+    const summary = el('summary');
+    const describe = () => {
+      const on = values.filter(isHeard);
+      summary.textContent = 'Read aloud, not shown: ' + (on.length
+        ? (on.length > 1 ? 'rows ' : 'row ') + joinList(on.map(money))
+        : 'nothing — every clue is on screen');
+    };
+    fold.append(summary);
+    fold.open = heardFoldOpen;
+    fold.ontoggle = () => { heardFoldOpen = fold.open; };
+
+    const wrap = el('div', 'heard-rows');
+    const note = el('p', 'heard-note');
+
+    values.forEach((value, i) => {
+      const form = Array.isArray(forms) ? forms[i] : '';
+      const row = el('label', 'heard-row' + (isHeard(value) ? ' on' : ''));
+
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = isHeard(value);
+      box.onchange = () => {
+        const on = box.checked;
+        categories.forEach(c => (c.clues || []).forEach(q => {
+          if (Number(q.value) !== value) return;
+          if (on) q.audio = true;
+          else delete q.audio;
+        }));
+        row.classList.toggle('on', on);
+        syncHeardBadges(grid, board);
+        describe();
+        touched();
+
+        /* Worked out AFTER the change, against the board as it now stands —
+         * the rows this one would collapse onto are the other shown rows that
+         * were WRITTEN to ask the same way, and that set depends on what was
+         * just done. Phrased as "as written" because that is the only part
+         * this can know: the teacher may have rewritten either row since. */
+        const clash = on || !form ? [] : values.filter((v, j) =>
+          v !== value && !isHeard(v) && (Array.isArray(forms) ? forms[j] : '') === form);
+        note.textContent = clash.length
+          ? `As written, ${money(value)} was ${clash.map(money).join(' and ')} without the text. With both shown, check the two rows don't now ask the same thing — the money is a promise that they differ.`
+          : '';
+        note.classList.toggle('warn', clash.length > 0);
+      };
+
+      // Labelled by the money alone — see the note on this function.
+      row.append(box, el('span', '', 'Row ' + money(value)));
+
+      /* Pointing at the row it governs, while the pointer is on it or it has
+       * the keyboard. The strip sits above a board that scrolls sideways, so
+       * "which squares am I about to change?" is a fair question even with the
+       * money on every one of them. */
+      const lit = on => grid.querySelectorAll('.board-cell[data-value="' + value + '"]')
+        .forEach(cell => cell.classList.toggle('row-lit', on));
+      row.onmouseenter = () => lit(true);
+      row.onmouseleave = () => lit(false);
+      box.onfocus = () => lit(true);
+      box.onblur = () => lit(false);
+      wrap.append(row);
+    });
+
+    describe();
+    const block = el('div', 'heard-block');
+    block.append(wrap, note);
+    fold.append(block);
+    return fold;
+  }
+
+  /* "a", "a and b", "a, b and c" — the summary reads as a sentence. */
+  function joinList(parts) {
+    if (parts.length < 2) return parts.join('');
+    return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+  }
+
+  /* Repaint the "heard" badges without rebuilding the board.
+   *
+   * A full re-render would throw away the teacher's scroll position and the
+   * box they were typing in, and the strip is a control they may flip twice
+   * while reading a column. */
+  function syncHeardBadges(grid, board) {
+    (board.categories || []).forEach((cat, ci) => {
+      (cat.clues || []).forEach((clue, qi) => {
+        const cell = grid.querySelector(`[data-category="${ci}"][data-clue="${qi}"]`);
+        if (!cell) return;
+        const head = cell.querySelector('.board-cell-head');
+        if (!head) return;
+        const badge = head.querySelector('.board-heard');
+        if (clue.audio && !badge) head.append(heardBadge());
+        else if (!clue.audio && badge) badge.remove();
+      });
+    });
+  }
+
+  function heardBadge() {
+    const badge = el('span', 'board-heard', 'heard');
+    badge.title = 'Read aloud by the screen; the text is never shown to the class';
+    return badge;
+  }
+
+  // The pack's own money, which is not always dollars.
+  function money(value) {
+    return ((game && game.currency) || '$') + value;
+  }
+
   function categoryColumn(cat, cheapest, ci) {
     const col = el('div', 'board-col');
 
@@ -872,22 +1301,23 @@
     // Addressed the way applyBoardEdit reports a change back.
     cell.dataset.category = String(ci);
     cell.dataset.clue = String(qi);
+    // And by value, so the heard strip can light the row it is about to change.
+    cell.dataset.value = String(clue.value != null ? clue.value : '');
 
     const head = el('div', 'board-cell-head');
-    head.append(el('span', 'board-value', '$' + (clue.value != null ? clue.value : '?')));
+    // Through `money`, not a hardcoded "$": the heard strip names the same rows
+    // right above the board, and the two disagreeing is worse than either.
+    head.append(el('span', 'board-value', money(clue.value != null ? clue.value : '?')));
 
-    /* A heard clue is read aloud with nothing on screen. It is shown as a badge
-     * rather than a switch on purpose: a row is heard in every category or in
-     * none — the value has to mean the same thing across the board — so one
-     * teacher toggling one square would quietly break that. */
-    if (clue.audio) {
-      const heard = el('span', 'board-heard', 'heard');
-      heard.title = 'Read aloud by the screen; the text is never shown to the class';
-      head.append(heard);
-    }
+    /* A heard clue is read aloud with nothing on screen. It is a badge here
+     * rather than a switch because a row is heard in every category or in none
+     * — the value has to mean the same thing across the board — so one teacher
+     * toggling one square would quietly break that. The switch for the whole
+     * row is above the board; see `heardStrip`. */
+    if (clue.audio) head.append(heardBadge());
     cell.append(head);
 
-    const prompt = el('textarea', 'board-prompt');
+    const prompt = autosize(el('textarea', 'board-prompt'), 3);
     prompt.rows = 3;
     prompt.value = clue.prompt || '';
     prompt.setAttribute('aria-label', 'Clue');
@@ -895,9 +1325,18 @@
     cell.append(prompt);
 
     /* The English the teacher can reveal mid-game, and which is printed on the
-     * script. The cheapest row has none: that row IS the English question. */
-    if (clue.value !== cheapest) {
-      const promptEn = el('textarea', 'board-prompt board-prompt-en');
+     * script. Which ROWS have one is the deck's business, not a rule about the
+     * cheapest square: on a word board it is every row but the $100, which is
+     * already the English question, and on a sentence board it is the dictation
+     * alone — there the English gives the meaning without the spelling, while on
+     * the row that shows Spanish and asks for its English it would BE the
+     * answer. */
+    const promptEnRows = deckRow().promptEnValues;
+    const wantsPromptEn = Array.isArray(promptEnRows)
+      ? promptEnRows.includes(Number(clue.value))
+      : clue.value !== cheapest;
+    if (wantsPromptEn) {
+      const promptEn = autosize(el('textarea', 'board-prompt board-prompt-en'), 2);
       promptEn.rows = 2;
       promptEn.placeholder = '… in English';
       promptEn.value = clue.promptEn || '';
@@ -906,7 +1345,15 @@
       cell.append(promptEn);
     }
 
-    const answer = el('input', 'board-answer');
+    /* A sentence answer needs a box that wraps.
+     *
+     * An <input> is one line that scrolls sideways, so a teacher checking
+     * "Si ella no fuera cocinera, no prepararía una sopa rica." sees three words
+     * of it. Only where answers really are sentences; a one-word answer in a
+     * single-line box is right. */
+    const answer = isSentenceDeck()
+      ? autosize(el('textarea', 'board-answer board-answer-long'), 2)
+      : el('input', 'board-answer');
     answer.value = clue.answer || '';
     answer.setAttribute('aria-label', 'Answer');
 
@@ -920,7 +1367,7 @@
      *
      * The article rides beside the answer, not beside the English: it is
      * Spanish, and "la" in front of "Christmas" reads as a mistake. */
-    const english = showsEnglishInSquares() ? englishRow(answer) : null;
+    const english = showsEnglishInSquares(clue) ? englishRow(answer) : null;
 
     if (english) {
       const line = el('div', 'board-answer-line');
@@ -939,9 +1386,22 @@
     return cell;
   }
 
-  function showsEnglishInSquares() {
+  /* Whether a square carries the answer's article and its English.
+   *
+   * Three things have to be true, and the last two are new. The pack must be a
+   * quiz alone (with bingo in it, the words have their own section). The deck
+   * must HAVE articles: a sentence carries its own and a verb form never takes
+   * one, so the dropdown is a field that cannot be right. And the answer must BE
+   * an entry of the list — on a sentence deck the $100, $200 and $400 rows
+   * answer with a phrase out of one, its English, or one after a change, so
+   * offering to add that to the list would fill it with fragments.
+   */
+  function showsEnglishInSquares(clue) {
     const games = game.games || {};
-    return !!games.jeopardy && !games.bingo && Array.isArray(game.items);
+    if (!games.jeopardy || games.bingo || !Array.isArray(game.items)) return false;
+    if (!hasArticle()) return false;
+    const exempt = deckRow().bankExemptValues || [];
+    return !exempt.includes(Number(clue && clue.value));
   }
 
   /* The English of whatever word the answer beside it names.
@@ -971,9 +1431,10 @@
 
       if (!item) {
         if (!String(answer.value).trim()) return;
-        const add = el('button', 'board-add', '+ add “' + answer.value.trim() + '” to the vocabulary list');
+        const add = el('button', 'board-add',
+          '+ add “' + answer.value.trim() + '” to the ' + entryNoun(true) + ' your class reviews');
         add.type = 'button';
-        add.title = 'Your class reviews this list; a word that is not in it cannot be reviewed';
+        add.title = 'Your class reviews this list; a ' + entryNoun(false) + ' that is not in it cannot be reviewed';
         add.onclick = () => {
           game.items.push({ face: answer.value.trim(), article: '', en: '' });
           touched();
@@ -1014,7 +1475,7 @@
     const answerField = el('div', 'field');
     const answer = el('input', 'board-answer');
     answer.value = final.answer || '';
-    const english = showsEnglishInSquares() ? englishRow(answer) : null;
+    const english = showsEnglishInSquares(final) ? englishRow(answer) : null;
     answerField.append(labelFor('Answer', answer));
     if (english) {
       const line = el('div', 'board-answer-line');
@@ -1189,11 +1650,29 @@
     if (game.games && game.games.bingo && items.length) {
       const sizes = (game.games.bingo.cardSets || []).map(set => set.size);
       const biggest = sizes.length ? Math.max.apply(null, sizes) : 4;
-      push(problems, window.SharedBingoCards.validateDeck({ clueTypes: game.clueTypes || [], items: items }, biggest));
+      /* `stripsArticles` so the article rule is not run on a deck whose
+       * entries are sentences — "La familia come pavo." has no field to move
+       * "La" into. Only bingo decks reach here today and none of them are
+       * sentence decks, so this changes nothing now; it is passed because the
+       * check should not depend on that staying true. */
+      push(problems, window.SharedBingoCards.validateDeck({
+        clueTypes: game.clueTypes || [],
+        stripsArticles: deckRow().stripsArticles !== false,
+        items: items,
+      }, biggest));
     }
 
     if (game.games && game.games.jeopardy) {
-      push(problems, window.SharedJeopardyBoard.validateBoard(game.games.jeopardy, { items: items }));
+      /* Judged with the deck's own settings, or a sentence pack is told that
+       * three rows out of five are "not in the word bank" — which is true, and
+       * is how those rows are meant to work: they answer with a phrase out of a
+       * listed sentence, its English, or that sentence after a change. */
+      const row = deckRow();
+      push(problems, window.SharedJeopardyBoard.validateBoard(game.games.jeopardy, {
+        items: items,
+        stripArticles: row.stripsArticles !== false,
+        bankExemptValues: new Set(row.bankExemptValues || []),
+      }));
     }
 
     panel.className = 'checks ' + (problems.length ? 'problems' : 'clear');
@@ -1306,6 +1785,91 @@
     area.oninput = () => onChange(area.value);
     wrap.append(labelFor(label, area), area);
     return wrap;
+  }
+
+  /* Which word fields this pack carries.
+   *
+   * A pack of verb forms has a FORMULA ("yo + hablar, pretérito") and no article
+   * and no definition; a pack of little words has neither formula nor article.
+   * Before this the editor drew an article box on every word and no formula box
+   * at all, so a teacher who bought a grammar pack was offered a field its words
+   * do not have and could not see — let alone fix — the clue its cheapest row is
+   * built from.
+   *
+   * `clueTypes` is the pack's own list of what it can be called out by, so the
+   * formula box follows it exactly. The article cannot: a pack of words and a
+   * pack of little words declare the same clue types and differ only in whether
+   * a word takes an article, so that one reads the deck type. Absent means
+   * vocabulary, as it does everywhere else. See src/deckTypes.js in the builder.
+   */
+  /* A box that grows to fit what is in it.
+   *
+   * A clue is one line in a vocabulary pack and four in a sentence pack, and a
+   * fixed three rows means the teacher reads the long ones through a scrollbar,
+   * two words at a time, while checking a board before a lesson. Measured on
+   * every input and once on first paint, because the value is usually set before
+   * the node is in the document.
+   */
+  function autosize(node, minRows) {
+    node.dataset.autosize = String(minRows || 1);
+    node.addEventListener('input', () => fitBox(node));
+    return node;
+  }
+
+  function fitBox(node) {
+    const min = Number(node.dataset.autosize || 1) * 20;
+    node.style.height = 'auto';
+    node.style.height = Math.max(node.scrollHeight, min) + 'px';
+  }
+
+  /* Fit every grown box once the page is built.
+   *
+   * A textarea has no width until it is in the document, and scrollHeight
+   * without a width is the height of one very long line — so measuring as each
+   * box is created got two thirds of them wrong. Measuring after render, when
+   * the layout is settled, gets all of them. Re-run on resize because the width
+   * a clue wraps at is the width of its column. */
+  function fitAllBoxes() {
+    document.querySelectorAll('[data-autosize]').forEach(fitBox);
+  }
+
+  function hasFormula() {
+    return ((game && game.clueTypes) || []).includes('prompt');
+  }
+
+  /* The registry row for the deck this game uses.
+   *
+   * The editor asks it four things: whether a word takes an article, what to
+   * call the list, and the two settings the board checks need. Falling back to
+   * an empty object keeps every question answerable before the fetch lands. */
+  function deckRow() {
+    let types = [];
+    try { types = JSON.parse(root.dataset.deckTypes || '[]'); } catch { types = []; }
+    const id = (game && game.type) || 'vocabulario';
+    return types.find(t => t.id === id) || {};
+  }
+
+  /* What this deck's entries are called, in a teacher's words.
+   *
+   * "Vocabulary list" is wrong on a pack of sentences and on a pack of verb
+   * forms, and it is the phrase the editor uses in half a dozen places. */
+  function entryNoun(plural) {
+    if (hasFormula()) return plural ? 'forms' : 'form';
+    if (((game && game.clueTypes) || []).length === 1 && !hasFormula() && isSentenceDeck()) {
+      return plural ? 'sentences' : 'sentence';
+    }
+    return plural ? 'words' : 'word';
+  }
+
+  // A deck whose entries are whole sentences: its answers are not single words,
+  // so the leading article belongs to them and the list is not a vocabulary one.
+  function isSentenceDeck() {
+    return deckRow().stripsArticles === false;
+  }
+
+  function hasArticle() {
+    const type = (game && game.type) || 'vocabulario';
+    return type === 'vocabulario';
   }
 
   function articleField(item) {
