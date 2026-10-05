@@ -35,15 +35,14 @@ class GoogleDriveServiceProvider extends ServiceProvider
             $service = new Drive($client);
 
             /*
-             * useDisplayPaths resolves human folder names, and to do it the
-             * adapter calls the Drive API from its own constructor — so a
-             * disk that is merely resolved, never written to, still costs a
-             * round trip and fails when Drive is unreachable. Backups address
-             * one folder by id, so the names buy nothing.
+             * Display paths stay on (the adapter's default), so the folder
+             * is a path of names like "SpanishClassPrintables/backups". With
+             * them off, every path segment is read as a Drive ID, and the
+             * upload fails with nothing but "Not able to write the file".
+             * The cost is a Drive call from the adapter's constructor, which
+             * only runs when a backup command resolves this disk.
              */
-            $adapter = new GoogleDriveAdapter($service, $config['folder'], [
-                'useDisplayPaths' => false,
-            ]);
+            $adapter = new GoogleDriveAdapter($service, $config['folder']);
 
             $driver = new Filesystem($adapter);
 

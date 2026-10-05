@@ -16,12 +16,15 @@ return [
 
     'backup' => [
         /*
-         * The subfolder the archives are written to inside the destination
-         * disk. Hardcoded rather than taken from APP_NAME because the health
-         * check below looks the backups up by this name, and a rename would
-         * silently start monitoring a folder nothing writes to.
+         * The Drive ID of the folder GOOGLE_DRIVE_FOLDER names
+         * (SpanishClassPrintables/backups), not a folder name. Spatie writes
+         * to "<name>/<archive>.zip", and the adapter treats a parent equal to
+         * its own root as the root, so the archives land directly in that
+         * folder rather than in a subfolder of it. A plain name here creates
+         * a subfolder instead. Same arrangement as Eat Well Planner and
+         * Nameception. The monitor below must use the same value.
          */
-        'name' => 'spanishclassprintables',
+        'name' => '1flziqLq-tn-YHSrcgTfh13L7lcZbNrF-',
 
         'source' => [
             'files' => [
@@ -324,7 +327,7 @@ return [
              * never happened — a cron that stopped firing, which is the
              * failure a backup job cannot report on itself.
              */
-            'name' => 'spanishclassprintables',
+            'name' => '1flziqLq-tn-YHSrcgTfh13L7lcZbNrF-',
             'disks' => ['google_drive_backups'],
             'health_checks' => [
                 MaximumAgeInDays::class => 1,
