@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/ai/prompts.js (commit 34674dd) by its
+ * Copied from the packet builder's src/ai/prompts.js (commit c7bc695) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -1411,10 +1411,26 @@ function ladderFact(type) {
   // repeating the verb five times.
   const read = rungs.filter(r => !r.audio)
     .map((r, i) => `$${r.value} ${i === 0 ? 'is ' : ''}${FORM_PHRASES[r.form] || 'a clue'}`);
-  const heard = rungs.filter(r => r.audio).map(r => `$${r.value}`);
+  const heardRungs = rungs.filter(r => r.audio);
+  const heard = heardRungs.map(r => `$${r.value}`);
   const many = heard.length > 1;
+  /* Name what a heard row ASKS when the shown rows do not already ask it.
+   *
+   * On a deck of words the heard rows are the $200 and $300 again without the
+   * reading, so naming their form would only repeat the sentence — "a LISTENING
+   * clue" is the whole of what is new about them. A deck of sentences is the
+   * other case: its heard row is a DICTATION, a task that appears nowhere else
+   * on the ladder, and left unnamed the listing sold a board of translation and
+   * dictation as a board of translation. Which it is depends on the type, so it
+   * is read off the ladder rather than written per type.
+   */
+  const shownForms = new Set(rungs.filter(r => !r.audio).map(r => r.form));
+  const fresh = [...new Set(heardRungs
+    .filter(r => !shownForms.has(r.form) && FORM_PHRASES[r.form])
+    .map(r => FORM_PHRASES[r.form]))];
+  const asks = fresh.length ? ` — ${fresh.join(', and ')}` : '';
   const listen = heard.length
-    ? ` ${heard.join(' and ')} ${many ? 'are LISTENING clues' : 'is a LISTENING clue'} the site reads aloud without showing the text — at an adjustable speed, and it can repeat ${many ? 'them' : 'it'}.`
+    ? ` ${heard.join(' and ')} ${many ? 'are LISTENING clues' : 'is a LISTENING clue'} the site reads aloud without showing the text${asks}, at an adjustable speed, and it can repeat ${many ? 'them' : 'it'}.`
     : '';
   return `Difficulty rises with the value in every category: ${read.join(', ')}.${listen}`;
 }

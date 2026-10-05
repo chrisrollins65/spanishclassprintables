@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/deckTypes.js (commit 34674dd) by its
+ * Copied from the packet builder's src/deckTypes.js (commit c7bc695) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -792,6 +792,20 @@ const FRASE = {
 
   // An answer here is a sentence, so its leading article is part of it.
   stripsArticles: false,
+
+  /* Twenty-six, where every other deck wants thirty.
+   *
+   * Thirty is sized for a deck of WORDS, which spends 26 on the board and keeps
+   * the rest because the bank is also the list a class studies and the pool a
+   * bingo card is dealt from - so a spare word is still printed and still
+   * useful. Neither is true here: there is no card, and the study sheet is the
+   * `reference` glossary because the bank is the answers. A twenty-seventh
+   * sentence is a sentence nobody reads, and a sentence is the most expensive
+   * entry in the app to write.
+   *
+   * Five columns of five plus the final wager is 26 exactly.
+   */
+  defaultCount: 26,
 
   /* More than one translation is right, and the teacher decides which.
    *

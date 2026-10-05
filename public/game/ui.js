@@ -162,6 +162,41 @@
     return /[\p{L}\p{N}]/u.test(String(text || ''));
   }
 
+  /* The dictionary word a grammar clue carries in brackets, taken out of the
+   * sentence and said after it.
+   *
+   * A `forma` gap sentence prints the word the answer is built from next to the
+   * blank — "Ayer mis primos ___ (hablar) por teléfono." — because the person
+   * and the tense a team can work out and WHICH WORD they cannot: nothing else
+   * in the sentence says. On the page that is right, and it is how every
+   * conjugation exercise is written. In the voice it is not. The blank is
+   * already a beep, so the engine reaches the beep and then opens the next
+   * utterance on an unconjugated verb — "Ayer mis primos [beep] hablar por
+   * teléfono" — which is neither the sentence nor a hint, and arrives as a
+   * stumble in the middle of the one clue the class only hears once.
+   *
+   * So it comes out of the sentence and goes after it, the way a teacher says
+   * it. The WRITTEN clue is untouched: the printed pages and "Ver el texto"
+   * still show the brackets where they belong.
+   *
+   * "La palabra" rather than "el verbo" because this deck is not only verbs —
+   * adjective agreement and plurals are `forma` too, and "El verbo: alto" is
+   * wrong in front of a class.
+   */
+  function hintAside(text) {
+    const said = String(text || '');
+    // Only a bracket that follows the blank. A parenthesis anywhere else in a
+    // sentence belongs to the sentence, and is read where it stands.
+    const found = /(_{2,}\s*)\(([^)]+)\)/.exec(said);
+    if (!found) return { sentence: said, aside: '' };
+    const sentence = said.slice(0, found.index) + found[1]
+      + said.slice(found.index + found[0].length);
+    return {
+      sentence: sentence.replace(/\s{2,}/g, ' '),
+      aside: `La palabra: ${found[2].trim()}.`,
+    };
+  }
+
   /* The pieces a sentence with blanks is read in.
    *
    * Every piece with a blank after it is given a comma it did not have. The
@@ -248,9 +283,13 @@
     hushGap();
     const run = ++speechRun;
     const fx = window.RoomFX;
-    const pieces = gapPieces(text);
+    const { sentence, aside } = hintAside(text);
+    const pieces = gapPieces(sentence);
     // No blank, or no way to sound one: one utterance, blanks flattened to a comma.
-    if (pieces.length < 2 || !fx || !fx.gapTone) return sayPart(speakable(text), rate, run);
+    if (pieces.length < 2 || !fx || !fx.gapTone) {
+      return sayPart(speakable(sentence), rate, run)
+        .then(() => (aside ? sayPart(aside, rate, run) : undefined));
+    }
 
     /* The sentence as a run of steps: a piece to say, and null for each blank
      * between two of them. A piece with nothing to SAY in it — a blank at the
@@ -269,6 +308,11 @@
       if (i && steps[steps.length - 1] !== null) steps.push(null);
       if (hasWords(piece)) steps.push(piece);
     });
+    // The bracketed word, last and on its own, so the sentence lands whole
+    // before the hint arrives. Queued as an ordinary step: it is the last one,
+    // so it is what the promise resolves on, and a caller waiting for the clue
+    // waits for the hint too.
+    if (aside) steps.push(aside);
     const last = steps.length - 1;
 
     return new Promise(resolve => {

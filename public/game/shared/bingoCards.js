@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/bingoCards.js (commit 34674dd) by its
+ * Copied from the packet builder's src/bingoCards.js (commit c7bc695) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -107,6 +107,27 @@ function validateDeck(deck, size = 4) {
   const needed = size * size;
   if (items.length < needed) {
     problems.push(`needs at least ${needed} faces for a ${size}x${size} card, has ${items.length}`);
+  }
+
+  /* Enough faces to make the cards DIFFERENT, which is a higher bar than
+   * enough to fill one.
+   *
+   * The check above is printability. The cards are dealt by sampling the faces,
+   * so a deck of exactly 16 gives every 4x4 card the same 16 words in a
+   * different order -- generateBingoCards keys its duplicates on the
+   * ARRANGEMENT, so it happily deals 30 "distinct" cards that are permutations
+   * of one. Called in a random order, the class then reaches its lines all at
+   * once: simulated over 30 cards on a 4x4, 16 faces yields ONE distinct word
+   * set and 7.9 cards with bingo within two calls of the first, and the game is
+   * over in twelve calls. 25 faces yields 30 distinct sets and 3.8; 30 yields
+   * 3.1. That is the real floor, and it is why games.html asks for 25.
+   *
+   * Advisory rather than a refusal: a thin deck still plays, it just plays
+   * badly, and nothing else tells the seller before the cards are printed.
+   */
+  const varied = Math.ceil(needed * 1.5);
+  if (items.length >= needed && items.length < varied) {
+    problems.push(`${items.length} faces fills a ${size}x${size} card but barely varies it: the cards will be near-shuffles of one another and much of the class will reach a line together. ${varied}+ is where that stops`);
   }
 
   const faces = new Set();

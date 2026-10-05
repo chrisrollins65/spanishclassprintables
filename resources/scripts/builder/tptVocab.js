@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/tptVocab.js (commit 34674dd) by its
+ * Copied from the packet builder's src/tptVocab.js (commit c7bc695) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -70,6 +70,42 @@ const KIND_GRADE_LEVELS = {
     '9th Grade', '10th Grade',
   ],
 };
+
+/* A deck of whole SENTENCES sits higher again, and needs its own band.
+ *
+ * The band belongs to what the product ASKS - that is the whole reason bingo
+ * and the quiz already differ - and a `frase` board asks something neither of
+ * them does: produce a whole Spanish sentence from the English with nothing
+ * given, and write down a dictation word for word. That is the end of Spanish 1
+ * through Spanish 3.
+ *
+ * Keyed on the kind alone it was stamped 4th-10th, the same band as a board of
+ * concrete nouns, which is the mis-sale the comment above guards against
+ * pointed the other way round: the 10th grade ceiling is there to keep nouns
+ * away from a Spanish 3 teacher, and this deck IS the Spanish 3 product.
+ *
+ * A type with no entry here takes its kind's band, which is every deck of
+ * single words - a bank of verb forms or of function words is played in the
+ * same grades as a bank of nouns, because the ask is the same size.
+ */
+const TYPE_GRADE_LEVELS = {
+  frase: [
+    '7th Grade', '8th Grade', '9th Grade', '10th Grade', '11th Grade',
+    '12th Grade',
+  ],
+};
+
+/* The one lookup, so the two tables are never consulted separately.
+ *
+ * Read at the call site instead, a new deck type's band is a row added to the
+ * table above and then missed by whoever writes the listing - which is exactly
+ * how `frase` came to be sold as a fourth grade product.
+ */
+function gradeLevelsFor(kind, typeId) {
+  return (TYPE_GRADE_LEVELS[typeId]
+    || KIND_GRADE_LEVELS[kind]
+    || STORE_GRADE_LEVELS).slice();
+}
 
 // Subject Area, World Languages group plus the catch-alls. The full taxonomy
 // runs to 132 entries across 8 groups, but a Spanish store never leaves these.
@@ -248,7 +284,8 @@ const TEACHING_DURATIONS = [
 ];
 
 module.exports = {
-  LIMITS, GRADE_LEVELS, STORE_GRADE_LEVELS, KIND_GRADE_LEVELS, SUBJECT_AREAS,
+  LIMITS, GRADE_LEVELS, STORE_GRADE_LEVELS, KIND_GRADE_LEVELS,
+  TYPE_GRADE_LEVELS, gradeLevelsFor, SUBJECT_AREAS,
   FORMATS, TAGS, ALL_TAGS,
   CUSTOM_CATEGORIES, DETAILS, ANSWER_KEY_OPTIONS, TEACHING_DURATIONS, TAX_CODES,
   KIND_CATEGORIES, GAME_DETAILS, matchCustomCategory,
