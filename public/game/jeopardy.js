@@ -187,6 +187,18 @@
       addBtn.disabled = rows.children.length >= TEAM_COLORS.length;
     };
 
+    /* Which rows are read aloud is NOT asked here.
+     *
+     * There was a three-way choice on this screen — as written, none, all — and
+     * it is gone on purpose. Which rows are heard is part of what the pack IS:
+     * the heard $400 of a vocabulary board is the $200 definition minus the
+     * reading, so silencing it at play time quietly leaves two rows asking the
+     * same thing, in front of a class, with nothing on screen saying so. The
+     * editor is where that change belongs — it says what will collapse, it
+     * keeps the printed teacher script in step, and it lasts past this period.
+     * The one case this screen really had to answer, a browser with no Spanish
+     * voice, needs no control at all: `heard` falls back to showing the clue.
+     */
     const start = el('button', 'primary', '¡Empezar!');
     start.onclick = () => {
       const teams = [...rows.children]
@@ -206,7 +218,8 @@
       renderBoard({ intro: true });
     };
 
-    wrap.append(addBtn, el('div', 'award-row', null, [
+    wrap.append(addBtn);
+    wrap.append(el('div', 'award-row', null, [
       howToButton(root, () => howToSteps(null)), reviewButton(root, bankItems()), start,
     ]), moreGames());
     const customize = window.RoomUI.customizeGame(room);
@@ -760,6 +773,13 @@
 
     const body = el('div', 'clue-body');
     body.append(el('p', 'prompt', clue.prompt));
+    /* Offered wherever a clue HAS an English version, and only there.
+     *
+     * Which rows carry one is decided when the board is written: on a sentence
+     * board only the dictation does, where the English gives the meaning without
+     * the spelling. The rows that are already English have none, and the row
+     * that shows Spanish and asks for its English must have none — there it
+     * would be the answer. */
     if (clue.promptEn) body.append(englishToggle(clue.promptEn));
 
     const answer = el('p', 'answer hidden', clue.answer || '');
@@ -804,6 +824,24 @@
     });
     const timerGroup = el('div', 'timer-choice', null, timerBtns);
     timerGroup.prepend(el('span', 'rate-label', 'Para escribir'));
+
+    /* Where the answer may be more than one right answer.
+     *
+     * "Puede haber", not "hay": plenty of these sentences have exactly one
+     * natural translation, and a screen that insists otherwise every time
+     * teaches a class to argue about the ones that do not.
+     *
+     * Addressed to the CLASS, because the class is what a projector faces. The
+     * first version read "tú decides", which on a screen full of students says
+     * the students decide. What a class needs to know is that their wording may
+     * still count; WHO rules on it is a teacher instruction and lives where the
+     * other ones do — the How to Play page and the listing, never the ❓ panel.
+     *
+     * Only for decks that say they need it; a one-word answer is right or wrong.
+     */
+    if (room && room.answerIsOpen) {
+      answer.append(el('span', 'answer-note', 'Puede haber más de una traducción correcta.'));
+    }
 
     const revealBtn = el('button', 'small', 'Mostrar la respuesta');
     const showAnswer = () => {
@@ -1029,7 +1067,24 @@
     return btn;
   }
 
+  /* What the class may see when the teacher presses Vocabulario.
+   *
+   * For most decks that is the bank: the words are what the class studies and
+   * the board asks them to produce one. For a deck of SENTENCES the bank is the
+   * answer key — thirty sentences the board is about to ask for — so showing it
+   * hands the class the game. Those packs carry a `reference` instead, a short
+   * glossary of the words the sentences are built from, and that is what goes on
+   * screen.
+   *
+   * Rows are [Spanish, English], which is the shape openVocab already reads.
+   */
   function bankItems() {
+    const ref = room.reference;
+    if (ref && Array.isArray(ref.rows) && ref.rows.length) {
+      return ref.rows
+        .filter(row => Array.isArray(row) && row[0])
+        .map(row => ({ face: String(row[0]), en: String(row[1] || '') }));
+    }
     return Array.isArray(room.items) ? room.items : [];
   }
 
@@ -1148,6 +1203,26 @@
     return btn;
   }
 
+  /* Whether THIS clue is read aloud rather than shown.
+   *
+   * The pack decides, and only the pack: a vocabulary board's $400 and $500 are
+   * its $200 and $300 minus the reading, and the dollar values promise exactly
+   * that. A teacher who wants it otherwise changes the pack in the editor,
+   * where the consequence is spelled out and the printed script follows.
+   *
+   * The one override left is the browser's, and it is a fallback rather than a
+   * choice: with no Spanish voice a heard clue would be a blank screen, so it
+   * is shown instead.
+   *
+   * The final wager is not reached from here at all (renderWager), so it stays
+   * shown, which is the rule it was written under: every team has money on it
+   * and has to be able to re-read it.
+   */
+  function heard(clue) {
+    if (!canSpeakSpanish()) return false;
+    return !!clue.audio;
+  }
+
   function countClues() {
     return game.categories.reduce((n, c) => n + c.clues.length, 0);
   }
@@ -1193,7 +1268,7 @@
      * until someone asks for it — showing it would turn the hardest clue on the
      * board into the same reading exercise as the $200.
      */
-    if (clue.audio && canSpeakSpanish()) {
+    if (heard(clue)) {
       const glyph = el('div', 'call-audio', '🔊');
       const note = el('p', 'call-note', 'Escuchen con atención');
 
@@ -1238,6 +1313,13 @@
 
     // A hint, not a rewrite: the clue keeps the difficulty the team accepted
     // when they picked its value, and the English only helps them read it.
+    /* Offered wherever a clue HAS an English version, and only there.
+     *
+     * Which rows carry one is decided when the board is written: on a sentence
+     * board only the dictation does, where the English gives the meaning without
+     * the spelling. The rows that are already English have none, and the row
+     * that shows Spanish and asks for its English must have none — there it
+     * would be the answer. */
     if (clue.promptEn) body.append(englishToggle(clue.promptEn));
 
     const controls = el('div', 'clue-controls');
@@ -1247,7 +1329,7 @@
      * standing in front of a class, and the clue screen is not the place to
      * make them press twice. A pack may still pin a clue to its own length. */
     const lengths = clue.seconds ? [clue.seconds] : SECONDS;
-    const suggested = clue.audio && canSpeakSpanish() ? AUDIO_SECONDS : DEFAULT_SECONDS;
+    const suggested = heard(clue) ? AUDIO_SECONDS : DEFAULT_SECONDS;
     const timerBtns = lengths.map(secs => {
       const btn = el('button', 'small' + (lengths.length > 1 && secs === suggested ? ' suggested' : ''),
         `⏱ ${secs}s`);
@@ -1259,6 +1341,11 @@
     });
     const timerGroup = el('div', 'timer-choice', null, timerBtns);
     timerGroup.prepend(el('span', 'rate-label', 'Para escribir'));
+
+    // The final is marked the same way; see the note on the clue screen.
+    if (room && room.answerIsOpen) {
+      answer.append(el('span', 'answer-note', 'Puede haber más de una traducción correcta.'));
+    }
 
     const revealBtn = el('button', 'small', 'Mostrar la respuesta');
     revealBtn.onclick = showAnswer;

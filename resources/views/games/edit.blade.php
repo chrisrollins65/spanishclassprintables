@@ -112,12 +112,88 @@
   .board-value { font: 700 .9rem 'Fredoka', sans-serif; color: var(--accent); }
   .board-heard { font-size: .62rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 800;
                  background: var(--gold-soft); color: #7A5200; border-radius: 4px; padding: 2px 5px; }
+  /* One switch per ROW, above the board it governs. See `heardStrip`: a row is
+     heard in every category or in none, so there is nothing to put on a cell.
+     Folded shut, because most teachers come to fix a clue and never open it —
+     so the summary states the setting rather than naming the control, and the
+     common case of wanting to KNOW costs no tap. Its own summary rules, not
+     .fold's: that one dresses a whole card, this sits inside one. */
+  .heard-fold { margin: 12px 0; }
+  .heard-fold > summary { cursor: pointer; padding: 6px 0; font-size: .88rem;
+    font-weight: 700; color: var(--muted); list-style-position: outside; }
+  .heard-fold > summary::marker { color: var(--accent); }
+  .heard-fold > summary:hover { color: var(--ink); }
+  .heard-block { margin: 2px 0 4px; }
+  .heard-rows { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .heard-row { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    padding: 3px 9px 3px 6px; border: 1px solid var(--edge); border-radius: 999px;
+    background: var(--paper); font-size: .85rem; }
+  .heard-row.on { border-color: var(--accent); background: var(--wash); }
+  .heard-row input { margin: 0; cursor: pointer; }
+  /* The row a switch governs, while the pointer or the keyboard is on it. */
+  .board-cell.row-lit { border-color: var(--accent); box-shadow: 0 0 0 2px var(--wash); }
+  .heard-note { margin: 6px 0 0; font-size: .85rem; color: var(--muted); }
+  .heard-note:empty { display: none; }
+  .heard-note.warn { color: #9A3412; }
+  /* Narrow: a grid rather than a wrapped flex line.
+     Measured, not guessed — the five switches run out of room at 660px, which
+     is why this is its own breakpoint and not the board's 720. (It was 780
+     while the strip carried an inline "Read aloud, not shown:" label; that text
+     is the fold's summary now, so re-measure this if the switches change.)
+     Wrapped, flex leaves them at ragged x positions — three, then a lone $500;
+     a grid keeps them in columns, so a short last line reads as deliberate. The
+     whole pill is the <label>, so it is the tap target: padded to a finger
+     here, where the 13px checkbox of the desktop layout is not something
+     anyone can hit. */
+  @media (max-width: 660px) {
+    .heard-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; }
+    /* 104px is the measured floor: "Row $500" with this padding needs 102, and
+       a track narrower than its text is where a pill clips or wraps. Allowing
+       for the real gutters (.wrap 20px a side, .card clamp(22px,4vw,34px)) that
+       gives five across above 700px, three at 500, two on every ordinary phone
+       and a plain stack below about 340. Two is not a compromise on a phone, it
+       is forced: 390px leaves 280px of card, and three columns of that are 88px
+       against text that needs 90. Shrinking the type to fit a third column was
+       the alternative and it is the worse one — this control is read at arm's
+       length over a classroom desk. */
+    .heard-row { justify-content: center; padding: 12px 8px; border-radius: 12px; white-space: nowrap; }
+    .heard-row input { width: 18px; height: 18px; }
+  }
+  /* What kind of bank this game uses, above the words it governs. Quiet by
+     default — it is a statement, not a control — and the picker only opens if a
+     teacher says the guess was wrong. */
+  .deck-type { margin: 10px 0 4px; }
+  .deck-type-now { font-size: .92rem; color: var(--muted); margin: 0; }
+  .deck-type-now strong { color: var(--ink); }
+  .deck-type-change { background: none; border: 0; padding: 0; margin-top: 4px;
+    font: inherit; font-size: .85rem; color: var(--accent); text-decoration: underline;
+    cursor: pointer; }
+  .deck-type-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px; margin-top: 10px; }
+  .deck-type-option { text-align: left; padding: 12px 14px; border: 2px solid var(--edge);
+    border-radius: 12px; background: var(--paper); cursor: pointer; font: inherit; }
+  .deck-type-option.chosen { border-color: var(--accent); background: var(--card); }
+  .deck-type-option strong { display: block; font-size: .95rem; margin-bottom: 2px; }
+  .deck-type-option em { font-style: normal; font-size: .82rem; color: var(--muted); }
+  /* Shown only after switching the deck of a game that is already written —
+     see `switchedNote`. Gold rather than red: nothing is broken, but the
+     clues now say one thing while the deck asks for another. */
+  .deck-type-switched { margin-top: 12px; border: 2px solid var(--gold);
+    border-radius: 14px; background: var(--gold-soft); padding: 14px 16px; }
+  .deck-type-switched p { margin: 0 0 10px; font-size: .92rem; color: #5B4200; }
+  .deck-type-switched p:last-child { margin: 10px 0 0; }
+  .deck-type-switched .muted-note { font-size: .85rem; }
+
   .board-prompt, .board-answer {
     width: 100%; font: inherit; font-size: .88rem; color: var(--ink); background: var(--card);
     border: 2px solid var(--edge); border-radius: 8px; padding: .4em .5em; resize: vertical;
   }
   /* Muted and italic, like the reveal itself: support text, not a second clue. */
   .board-prompt-en { color: var(--muted); font-style: italic; }
+  /* A sentence answer wraps instead of scrolling sideways; autosize() in
+     editor.js grows it to its content so nothing is read two words at a time. */
+  .board-answer-long { resize: vertical; line-height: 1.35; overflow: hidden; }
+  .board-prompt, .board-prompt-en { overflow: hidden; }
   .board-answer { font-weight: 700; }
   .board-prompt:focus, .board-answer:focus { border-color: var(--accent); outline: none; }
   @media (max-width: 720px) {
@@ -227,6 +303,9 @@
        data-cards-status-url="{{ route('my-games.cards.status', [$game, 'SIZE']) }}"
        data-game-id="{{ $game->id }}"
        data-kind="{{ $game->kind }}"
+       {{-- The deck types, so the editor can say which one this game uses and
+            let a teacher change it when the guess was wrong. --}}
+       data-deck-types="{{ json_encode($deckTypes, JSON_UNESCAPED_UNICODE) }}"
        data-draft="{{ $game->isPublished() ? '' : '1' }}"
        data-write-url="{{ route('my-games.write', $game) }}"
        data-publish-url="{{ route('my-games.publish', $game) }}"

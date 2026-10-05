@@ -28,7 +28,13 @@
       <p class="notice">{{ session('status') }}</p>
     @endif
 
-    <p class="balance">{{ $teacher->credits() }} credits</p>
+    {{-- Three numbers, because a support question needs all three: what they
+         can spend now, what their drafts are sitting on, and what they have
+         been given altogether. The ledger total alone looks like a balance
+         and isn't one. --}}
+    <p class="balance">{{ $teacher->availableCredits() }} credits</p>
+    <p class="hint">ready to use · {{ $teacher->heldCredits() }} held by drafts ·
+      {{ $teacher->creditsPurchased() }} bought or given in total</p>
 
     {{-- By hand: an apology, a test account, a sale that arrived without its
          webhook. Undoing a purchase is a refund, not this. --}}

@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/bingoCards.js (commit d00233d) by its
+ * Copied from the packet builder's src/bingoCards.js (commit 34674dd) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -123,14 +123,25 @@ function validateDeck(deck, size = 4) {
     });
   });
 
-  items.forEach(item => {
-    if (item.article && !/^(el|la|los|las)$/i.test(String(item.article).trim())) {
-      problems.push(`"${item.face}" has "${item.article}" as its article; expected el, la, los or las`);
-    }
-    if (/^(el|la|los|las)\s/i.test(item.face || '')) {
-      problems.push(`face "${item.face}" still has its article glued on; the article belongs in its own field`);
-    }
-  });
+  /* The article is its own field — on a deck of WORDS.
+   *
+   * Where an entry is a whole sentence the leading article belongs to it: "La
+   * familia come pavo en el comedor." is the sentence, and there is no field
+   * to move "La" into. Run anyway, this condemned every sentence that happened
+   * to start with one, which on a Christmas bank was half the deck. The deck
+   * says which it is, the same `stripsArticles` the board check and the
+   * server's own tidy-up read. Absent means true, as it does everywhere else.
+   */
+  if (deck.stripsArticles !== false) {
+    items.forEach(item => {
+      if (item.article && !/^(el|la|los|las)$/i.test(String(item.article).trim())) {
+        problems.push(`"${item.face}" has "${item.article}" as its article; expected el, la, los or las`);
+      }
+      if (/^(el|la|los|las)\s/i.test(item.face || '')) {
+        problems.push(`face "${item.face}" still has its article glued on; the article belongs in its own field`);
+      }
+    });
+  }
 
   // The rule vocabulary gives away free: one clue, one face.
   clueTypes.forEach(key => {

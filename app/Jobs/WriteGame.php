@@ -56,13 +56,39 @@ class WriteGame implements ShouldQueue
                 throw new RuntimeException('This credit has used all of its AI. You can still write and edit the game yourself.');
             }
 
-            $written = $writer->write($builder->generatePrompt($game));
+            /* One call, or two for a grammar quiz.
+             *
+             * The builder decides how many and what each writes (Builder::plan):
+             * vocabulary writes its words and its board in one reply, while a
+             * grammar deck writes the bank first and the board over it, because
+             * its words carry a formula the one-reply prompt has no room for.
+             *
+             * The replies are merged and applied ONCE at the end. Applying each
+             * as it arrives would leave a game with words and no board if the
+             * second call failed — and applyWriting replaces items wholesale, so
+             * the second reply would wipe the first's words on its way in.
+             */
+            $data = [];
+            $writtenBy = '';
 
-            // Charged whatever happens next: the model has been paid for, and
-            // a budget that counted only successes would not be a budget.
-            $unit?->chargeAi($written->cents);
+            foreach ($builder->plan($game) as $step) {
+                // Re-checked per call for the same reason it is checked at all:
+                // the first call of a two-call game can exhaust the budget.
+                if ($unit !== null && $unit->aiCentsLeft() <= 0) {
+                    throw new RuntimeException('This credit has used all of its AI. You can still write and edit the game yourself.');
+                }
 
-            $game->applyWriting($written->data, $written->writtenBy);
+                $written = $writer->write($builder->generatePrompt($game, $step, $data));
+
+                // Charged whatever happens next: the model has been paid for, and
+                // a budget that counted only successes would not be a budget.
+                $unit?->chargeAi($written->cents);
+
+                $data = array_merge($data, $written->data);
+                $writtenBy = $written->writtenBy;
+            }
+
+            $game->applyWriting($data, $writtenBy);
 
             // A wholly new game: whatever was asked of AI before was asked of
             // words that no longer exist, so "change it again" would point at

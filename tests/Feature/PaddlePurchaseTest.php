@@ -70,7 +70,7 @@ class PaddlePurchaseTest extends TestCase
             'paddle.credits' => ['pri_single01' => 1, 'pri_bundle01' => 10],
         ]);
         $user = User::factory()->create();
-        CreditEntry::record($user, 3, CreditEntry::ADMIN, 'gift-1', 'A gift');
+        $user->grantCredits(3, CreditEntry::ADMIN, 'gift-1', 'A gift');
 
         $this->actingAs($user)->get('/credits')
             ->assertOk()
@@ -105,12 +105,42 @@ class PaddlePurchaseTest extends TestCase
     public function test_the_balance_is_only_ever_your_own(): void
     {
         $user = User::factory()->create();
-        CreditEntry::record($user, 2, CreditEntry::ADMIN, 'gift-2', 'A gift');
+        $user->grantCredits(2, CreditEntry::ADMIN, 'gift-2', 'A gift');
 
         // Logged out first: actingAs lasts for the rest of the test.
         $this->getJson('/credits/balance')->assertUnauthorized();
 
         $this->actingAs($user)->getJson('/credits/balance')->assertOk()->assertJson(['credits' => 2]);
+    }
+
+    /**
+     * The bug this guards: the page showed the ledger's sum, which counts
+     * money in and never a game made. A teacher who had spent all three was
+     * told they had three, and then sent here when they pressed create.
+     */
+    public function test_the_balance_is_what_is_left_not_what_was_bought(): void
+    {
+        $user = User::factory()->create();
+        $user->grantCredits(3, CreditEntry::ADMIN, 'gift-3', 'A gift');
+
+        $spent = TeacherGame::factory()->create(['user_id' => $user->id, 'published_at' => now()]);
+        CreditUnit::claimFor($user, $spent);
+        $draft = TeacherGame::factory()->draft()->create(['user_id' => $user->id]);
+        CreditUnit::claimFor($user, $draft);
+
+        $this->assertSame(3, $user->creditsPurchased());
+        $this->assertSame(1, $user->availableCredits());
+
+        $this->actingAs($user)->getJson('/credits/balance')->assertOk()->assertJson(['credits' => 1]);
+
+        // And the page agrees with it, with the draft's credit named rather
+        // than just missing from the count.
+        config(['paddle.client_token' => 'test_token', 'paddle.credits' => ['pri_single01' => 1]]);
+        $this->actingAs($user)->get('/credits')
+            ->assertOk()
+            ->assertSee('>1<', false)
+            ->assertSee('credit ready to use')
+            ->assertSee('held by a draft');
     }
 
     public function test_a_sale_becomes_credits(): void
@@ -119,7 +149,7 @@ class PaddlePurchaseTest extends TestCase
 
         $this->send($this->sale($user))->assertOk();
 
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
     }
 
     public function test_the_same_delivery_twice_is_credited_once(): void
@@ -130,7 +160,7 @@ class PaddlePurchaseTest extends TestCase
         $this->send($this->sale($user))->assertOk();
         $this->send($this->sale($user))->assertOk();
 
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
         $this->assertSame(1, CreditEntry::where('reason', CreditEntry::PURCHASE)->count());
     }
 
@@ -144,7 +174,7 @@ class PaddlePurchaseTest extends TestCase
         $this->send($this->sale($user), null, time() + 3600)->assertForbidden();
         $this->postJson('/api/paddle/webhook', $this->sale($user))->assertForbidden();
 
-        $this->assertSame(0, $user->credits());
+        $this->assertSame(0, $user->creditsPurchased());
     }
 
     public function test_a_delivery_signed_during_a_secret_rotation_is_accepted(): void
@@ -163,7 +193,7 @@ class PaddlePurchaseTest extends TestCase
             $body,
         )->assertOk();
 
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
     }
 
     public function test_a_price_we_do_not_sell_credits_nothing(): void
@@ -172,7 +202,7 @@ class PaddlePurchaseTest extends TestCase
 
         $this->send($this->sale($user, 'txn_x', 'pri_something_else'))->assertOk();
 
-        $this->assertSame(0, $user->credits());
+        $this->assertSame(0, $user->creditsPurchased());
     }
 
     public function test_a_refund_takes_the_credits_back(): void
@@ -182,7 +212,7 @@ class PaddlePurchaseTest extends TestCase
 
         $this->send($this->refund())->assertOk();
 
-        $this->assertSame(0, $user->credits());
+        $this->assertSame(0, $user->creditsPurchased());
     }
 
     public function test_a_refund_still_under_review_takes_nothing(): void
@@ -192,7 +222,7 @@ class PaddlePurchaseTest extends TestCase
 
         $this->send($this->refund(status: 'pending_approval'))->assertOk();
 
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
     }
 
     public function test_a_sale_hands_over_credits_to_spend(): void
@@ -202,7 +232,7 @@ class PaddlePurchaseTest extends TestCase
         $this->send($this->sale($user))->assertOk();
 
         // Ten on the ledger, and ten things a teacher can actually spend.
-        $this->assertSame(10, $user->credits());
+        $this->assertSame(10, $user->creditsPurchased());
         $this->assertSame(10, $user->availableCredits());
     }
 

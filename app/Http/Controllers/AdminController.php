@@ -30,7 +30,10 @@ class AdminController extends Controller
         $teachers = User::query()
             ->when($search !== '', fn ($query) => $query->where('email', 'like', "%{$search}%")
                 ->orWhere('name', 'like', "%{$search}%"))
-            ->withSum('creditEntries as credits', 'delta')
+            // Units with no game on them, not the sum of the ledger: the
+            // column is headed "Credits" and a ledger sum would be what they
+            // bought in total, which reads as a balance and isn't one.
+            ->withCount(['creditUnits as credits' => fn ($query) => $query->whereNull('game_id')])
             ->withCount('teacherGames as games')
             ->latest()
             ->paginate(25)

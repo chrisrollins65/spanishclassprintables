@@ -50,7 +50,9 @@ class AdminTest extends TestCase
     {
         $admin = $this->admin();
         $teacher = User::factory()->create(['name' => 'Ana Profe']);
-        CreditEntry::record($teacher, 10, CreditEntry::PURCHASE, 'txn_1', 'Paddle transaction');
+        // grantCredits, not a bare ledger row: the page shows what a teacher
+        // can spend, which is units, and a ledger row alone makes none.
+        $teacher->grantCredits(10, CreditEntry::PURCHASE, 'txn_1', 'Paddle transaction');
         TeacherGame::factory()->create(['user_id' => $teacher->id, 'theme' => 'Los Deportes']);
 
         $this->actingAs($admin)
@@ -72,7 +74,7 @@ class AdminTest extends TestCase
             ->post("/admin/teachers/{$teacher->id}/credits", ['delta' => 3, 'note' => 'Sale that never webhooked'])
             ->assertRedirect("/admin/teachers/{$teacher->id}");
 
-        $this->assertSame(3, $teacher->credits());
+        $this->assertSame(3, $teacher->creditsPurchased());
         $this->assertSame(CreditEntry::ADMIN, CreditEntry::where('user_id', $teacher->id)->sole()->reason);
     }
 
@@ -86,7 +88,7 @@ class AdminTest extends TestCase
         $this->actingAs($admin)->post("/admin/teachers/{$teacher->id}/credits", ['delta' => 0, 'note' => 'nothing'])
             ->assertSessionHasErrors('delta');
 
-        $this->assertSame(0, $teacher->credits());
+        $this->assertSame(0, $teacher->creditsPurchased());
     }
 
     public function test_refunding_asks_paddle_and_waits_for_its_word(): void
@@ -109,7 +111,7 @@ class AdminTest extends TestCase
 
         // The credits come off when Paddle says the refund is approved, not
         // when we ask — so the ledger has not moved yet.
-        $this->assertSame(10, $teacher->credits());
+        $this->assertSame(10, $teacher->creditsPurchased());
     }
 
     public function test_only_a_purchase_can_be_refunded(): void

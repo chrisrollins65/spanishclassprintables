@@ -8,16 +8,20 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * One movement of credits (docs/teacher-games.md, Phase 2).
+ * One movement of MONEY, in credits (docs/teacher-games.md, Phase 2).
  *
  * Rows are only ever added. A refund is a negative row beside the purchase it
  * reverses, so the history reads as what happened rather than as what is left.
+ *
+ * Spending is not here. There was a `spend` reason once, before credit_units,
+ * and nothing has written one since a credit became a row that points at its
+ * game — so the sum of these rows is what a teacher bought, never what they
+ * have left. The reason is gone rather than left unused, because the next
+ * reader to see it will believe this ledger knows about spending.
  */
 class CreditEntry extends Model
 {
     public const PURCHASE = 'purchase';
-
-    public const SPEND = 'spend';
 
     public const REFUND = 'refund';
 

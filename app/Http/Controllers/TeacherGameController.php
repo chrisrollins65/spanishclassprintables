@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Ai\Builder;
 use App\Ai\Writer;
 use App\Jobs\EditGame;
 use App\Jobs\RenderAnswerSheet;
@@ -121,32 +122,162 @@ class TeacherGameController extends Controller
     }
 
     /**
-     * Start a game, which is where a credit goes.
+     * Read what kind of game the description asks for, and show it.
      *
-     * The credit is taken before anything is written, so every model call has
-     * one behind it — and handed straight back if there is nothing to write
-     * with, so a teacher never pays for a button that did not work.
+     * Nothing is created and no credit is taken here. The kind of bank was
+     * always worked out before anything was written; this stops in between and
+     * says so, because it is the one decision a teacher cannot discover any
+     * other way. "The subjunctive" is as true of a board of verb forms as of a
+     * board of whole sentences to translate, and a teacher who did not know
+     * the second exists used to find out after the credit was spent.
      */
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'kind' => ['required', Rule::in(array_keys(TeacherGame::LABELS))],
             'theme' => ['required', 'string', 'max:120'],
+            /* What the lesson is for, in the teacher's words. The kind of bank
+             * is read from it rather than asked for — see Builder::classify. */
+            'describe' => ['nullable', 'string', 'max:500'],
             'written_by' => ['required', Rule::in(['me', 'ai'])],
         ]);
 
-        $teacher = $request->user();
         $theme = trim($data['theme']);
+        $chosen = app(Builder::class)->classify(
+            $theme,
+            (string) ($data['describe'] ?? ''),
+            app(Writer::class),
+            $data['kind'],
+        );
 
-        /* One press at a time, per teacher and per press.
+        /* Skipped unless there is really something to choose.
          *
-         * The repeat check below reads before it writes, and a double-tap on a
-         * phone arrives as two requests at once: both read nothing, both
-         * create, and the teacher has paid twice. Serialising them is what
-         * makes the check mean anything — without it the guard passes a
-         * sequential test and fails the case it exists for.
+         * The screen exists for one question: whether the class recalls items
+         * or produces whole sentences. That is a choice about the ACTIVITY,
+         * and it is the only one a teacher cannot discover any other way. The
+         * difference between a bank of words, of verb forms and of little
+         * words is not that question — it is our own distinction about how a
+         * pack is BUILT, which this form deliberately stopped asking about
+         * (see the note on the description box in create.blade.php). A bingo
+         * can only be played one way, so a bingo would be shown three cards it
+         * has no basis to choose between on its way to the thing it asked for.
+         *
+         * Read off the decks rather than hardcoded, so a quiz-only deck added
+         * later turns the screen on by itself: `answerIsOpen` is what makes an
+         * answer something the teacher judges rather than a bank face to match,
+         * which is the production/recognition split. Fewer than two decks also
+         * means no choice — the registry comes over the node bridge, which can
+         * be down, and a confirm screen with an empty picker is a dead end
+         * whose one button posts a `type` that is required and absent.
          */
-        $key = 'start-game:'.$teacher->id.':'.$data['kind'].':'.md5($theme);
+        $decks = $this->decksFor($data['kind']);
+        $activities = array_unique(array_map(
+            fn (array $row): string => empty($row['answerIsOpen']) ? 'recall' : 'produce',
+            $decks,
+        ));
+
+        if (count($decks) < 2 || count($activities) < 2) {
+            $data['type'] = $chosen['type'];
+            $data['classified'] = $chosen['type'];
+            $data['why'] = $chosen['why'];
+
+            return $this->makeGame($request->user(), $data, $theme);
+        }
+
+        return redirect()->route('my-games.confirm')->with('pendingGame', [
+            'kind' => $data['kind'],
+            'theme' => $theme,
+            'describe' => trim((string) ($data['describe'] ?? '')),
+            'written_by' => $data['written_by'],
+            'type' => $chosen['type'],
+            'why' => $chosen['why'],
+        ]);
+    }
+
+    /**
+     * What we are about to build, with the chance to change it.
+     *
+     * Reached only from store(), whose classification it carries, so this
+     * screen costs no second model call. A refresh keeps it (reflash); a
+     * teacher who arrives with nothing pending goes back to the form.
+     */
+    public function confirm(Request $request): View|RedirectResponse
+    {
+        $pending = $request->session()->get('pendingGame');
+        if (! is_array($pending)) {
+            return redirect()->route('my-games.create');
+        }
+        $request->session()->reflash();
+
+        return view('games.confirm', [
+            'pending' => $pending,
+            'types' => $this->decksFor($pending['kind']),
+        ]);
+    }
+
+    /**
+     * The decks a game of this kind can be played as.
+     *
+     * A sentence deck is quiz-only, and a bingo built on one would have no way
+     * to call a card. The classifier is filtered the same way, but a teacher
+     * overruling it is not — see `games` on the deck type.
+     *
+     * Note the rename: a game's kind here is "jeopardy" and a deck type calls
+     * the same thing "quiz", which is the translation `classifyPrompt` does on
+     * the way into the model. Without it nothing matches a quiz at all and
+     * every quiz quietly falls back to vocabulary.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function decksFor(string $kind): array
+    {
+        $played = $kind === 'jeopardy' ? 'quiz' : $kind;
+
+        return array_values(array_filter(
+            app(Builder::class)->types(),
+            fn (array $row): bool => in_array($played, $row['games'] ?? ['bingo', 'quiz'], true),
+        ));
+    }
+
+    /**
+     * Start a game, which is where a credit goes.
+     *
+     * The credit is taken before anything is written, so every model call has
+     * one behind it — and handed straight back if there is nothing to write
+     * with, so a teacher never pays for a button that did not work.
+     */
+    public function begin(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'kind' => ['required', Rule::in(array_keys(TeacherGame::LABELS))],
+            'theme' => ['required', 'string', 'max:120'],
+            'describe' => ['nullable', 'string', 'max:500'],
+            'written_by' => ['required', Rule::in(['me', 'ai'])],
+            // The answer to the confirm screen: the classifier's, or the
+            // teacher's correction of it. `classified` is what the classifier
+            // said, so `why` can be dropped when they are no longer the same.
+            'type' => ['required', 'string', 'max:40'],
+            'classified' => ['nullable', 'string', 'max:40'],
+            'why' => ['nullable', 'string', 'max:300'],
+        ]);
+
+        return $this->makeGame($request->user(), $data, trim($data['theme']));
+    }
+
+    /**
+     * One press at a time, per teacher and per press.
+     *
+     * The repeat check inside reads before it writes, and a double-tap on a
+     * phone arrives as two requests at once: both read nothing, both create,
+     * and the teacher has paid twice. Serialising them is what makes the check
+     * mean anything — without it the guard passes a sequential test and fails
+     * the case it exists for.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function makeGame(User $teacher, array $data, string $theme): RedirectResponse
+    {
+        $key = 'start-game:'.$teacher->id.':'.$data['kind'].':'.md5($theme.'|'.($data['describe'] ?? ''));
 
         try {
             return Cache::lock($key, 30)->block(
@@ -161,11 +292,30 @@ class TeacherGameController extends Controller
         }
     }
 
-    /** The making of the game itself, with the press held (see store()). */
+    /** The making of the game itself, with the press held (see begin()). */
     private function startGame(User $teacher, array $data, string $theme): RedirectResponse
     {
         if ($again = $this->justStarted($teacher, $data['kind'], $theme)) {
             return redirect()->route('my-games.edit', $again);
+        }
+
+        /* What kind of bank this lesson needs — read from the description by
+         * store() and confirmed by the teacher on the way here, so by this
+         * point it is an answer rather than a guess. It decides which fields a
+         * word has in the editor and not only how it is generated, which is
+         * why a teacher writing it themselves is asked the same question.
+         *
+         * Checked against the registry rather than trusted: the id arrives in
+         * a form, and a deck this kind cannot play would make a game that
+         * cannot be called. Anything unknown lands on vocabulary, as it does
+         * everywhere else.
+         */
+        $type = null;
+        foreach ($this->decksFor($data['kind']) as $row) {
+            if (($row['id'] ?? '') === $data['type']) {
+                $type = $row;
+                break;
+            }
         }
 
         $game = new TeacherGame;
@@ -175,7 +325,35 @@ class TeacherGameController extends Controller
             'theme' => $theme,
             'kind' => $data['kind'],
             'games' => $data['kind'],
-            'payload' => json_encode(TeacherGame::blank($data['kind'], $theme) + ['code' => $game->id], JSON_UNESCAPED_UNICODE),
+            'payload' => json_encode(
+                TeacherGame::blank(
+                    $data['kind'],
+                    $theme,
+                    $type['id'] ?? '',
+                    $type['clueTypes'] ?? [],
+                    [
+                        'answerIsOpen' => $type['answerIsOpen'] ?? false,
+                        // So applyWriting knows not to split an article off a
+                        // sentence — see TeacherGame::tidyItems.
+                        'stripsArticles' => $type['stripsArticles'] ?? true,
+                    ],
+                )
+                    + [
+                        'code' => $game->id,
+                        // Kept so the generation prompts can use it and the edit
+                        // screen can say why this kind was chosen.
+                        'describe' => trim((string) ($data['describe'] ?? '')) ?: null,
+                        /* Why this kind was chosen, for the edit screen to
+                         * repeat — but only while it is still the classifier's
+                         * own reading. A teacher who changed it on the confirm
+                         * screen has overruled that, and the reason given for a
+                         * deck nobody chose would be a lie on the page. */
+                        'typeWhy' => ($data['type'] === ($data['classified'] ?? ''))
+                            ? (trim((string) ($data['why'] ?? '')) ?: null)
+                            : null,
+                    ],
+                JSON_UNESCAPED_UNICODE,
+            ),
         ]);
         $game->save();
 
@@ -385,6 +563,9 @@ class TeacherGameController extends Controller
 
         return view('games.edit', [
             'game' => $game,
+            // So the editor can name the kind of bank this game uses and offer
+            // the others, without keeping its own copy of the list.
+            'deckTypes' => app(Builder::class)->types(),
             // On the page itself, not only in the reply to an ask: a teacher
             // who comes back the next day to a credit with no AI left should
             // meet a closed box that says so, rather than an open one that

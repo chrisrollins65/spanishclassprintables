@@ -22,7 +22,10 @@
 @endpush
 
 @section('content')
-<div class="wrap narrow">
+{{-- Same reason as the create page: two price cards side by side are a choice
+     to compare, not a stack of inputs, and at 460px they were squeezed into
+     columns half the width of the card they sit in. --}}
+<div class="wrap roomy">
   <div class="card accent">
     <h1>Credits</h1>
     <p class="lead">One credit makes one game — a bingo pack or a Jeopardy-style team quiz — that is yours to edit, play and print forever, as many times as you want.
@@ -33,8 +36,16 @@
       @endif
     </p>
 
+    {{-- "ready to use", not "on your account": a credit a draft is holding is
+         on the account and cannot make a new game, and the difference is the
+         whole reason this number used to disagree with the create screen. --}}
     <p class="balance" id="balance">{{ $credits }}</p>
-    <p class="hint">{{ $credits === 1 ? 'credit' : 'credits' }} on your account</p>
+    <p class="hint" id="balance-label">{{ $credits === 1 ? 'credit' : 'credits' }} ready to use</p>
+
+    @if ($held > 0)
+      <p class="hint">{{ $held }} {{ $held === 1 ? 'more is held by a draft' : 'more are held by drafts' }} —
+        deleting a draft from <a href="{{ route('my-games') }}">My games</a> gives its credit back.</p>
+    @endif
 
     @if ($justBought)
       <p class="notice waiting on" id="waiting">Thank you! Your credits land here the moment the payment clears — usually a second or two.</p>
@@ -181,6 +192,9 @@
             .then(function (body) {
               if (body.credits > started) {
                 document.getElementById('balance').textContent = body.credits;
+                // The word beside it too, or a balance of 11 reads "credit".
+                var label = document.getElementById('balance-label');
+                if (label) label.textContent = (body.credits === 1 ? 'credit' : 'credits') + ' ready to use';
                 if (waiting) waiting.textContent = 'Your credits are here. Go and make a game.';
               } else {
                 check();
