@@ -95,14 +95,76 @@ const TYPE_GRADE_LEVELS = {
   ],
 };
 
+/* A grammar pack says its own level, because the deck type cannot.
+ *
+ * The rule above does not change: a band belongs to what the product ASKS, and
+ * never to its topic. What was wrong was the GRANULARITY. For vocabulary the
+ * ask really is constant inside a type — "la manzana" asks exactly what
+ * "el bosque" asks — but `forma` runs from adding -o to hablar all the way to
+ * producing a pluperfect subjunctive, and one band cannot be right for both.
+ * Keyed on the kind alone, every grammar pack was listed 3rd-9th and 4th-10th:
+ * fine at the top, and wrong at the bottom for all of them, since a 3rd grade
+ * FLES class does not conjugate anything at all.
+ *
+ * So the pack declares a LEVEL and the bands live here. Three things follow
+ * from it being a tier rather than a list of grades on the card, and all three
+ * are the point:
+ *
+ * - Drift is bounded. A free-form "grades" key invites whoever writes a card to
+ *   look at thirty forms, decide they look hard, and shade the band — which is
+ *   the exact failure the comment above records, and it costs search traffic
+ *   silently because nothing can check a number against anything.
+ * - The bands stay in ONE place. Retuning a floor is this table, not a sweep
+ *   through every pack file ever attached to a card.
+ * - An unknown value can be refused, the way deckType() refuses a bad type.
+ *
+ * And the level is NOT judged from the items. Section 5 of
+ * docs/idea-prompts/spanish-class-printables-grammar-pack-prompt.md lists every
+ * structure in the order a class meets it and now carries a level per row, so
+ * filling one in is a lookup rather than an opinion. That is the same move
+ * gradeLevelsFor itself makes — stamp, do not ask — at the granularity that
+ * actually varies.
+ *
+ * Within a level the quiz still starts a grade above bingo, for the reason
+ * KIND_GRADE_LEVELS gives: bingo prints the form in front of the child to
+ * recognise, while the quiz reads a sentence aloud and wants it produced.
+ */
+const DECK_LEVELS = ['inicial', 'intermedio', 'avanzado'];
+
+const LEVEL_GRADE_LEVELS = {
+  // The present, ser/estar, agreement, plurals, the little words.
+  inicial: {
+    bingo: ['5th Grade', '6th Grade', '7th Grade', '8th Grade', '9th Grade', '10th Grade'],
+    quiz: ['6th Grade', '7th Grade', '8th Grade', '9th Grade', '10th Grade'],
+  },
+  // The pretérito, the imperfecto, the futuro, commands, the present perfect.
+  intermedio: {
+    bingo: ['7th Grade', '8th Grade', '9th Grade', '10th Grade', '11th Grade'],
+    quiz: ['8th Grade', '9th Grade', '10th Grade', '11th Grade'],
+  },
+  // The subjunctive and the conditionals.
+  avanzado: {
+    bingo: ['9th Grade', '10th Grade', '11th Grade', '12th Grade'],
+    quiz: ['10th Grade', '11th Grade', '12th Grade'],
+  },
+};
+
 /* The one lookup, so the two tables are never consulted separately.
  *
  * Read at the call site instead, a new deck type's band is a row added to the
  * table above and then missed by whoever writes the listing - which is exactly
  * how `frase` came to be sold as a fourth grade product.
  */
-function gradeLevelsFor(kind, typeId) {
-  return (TYPE_GRADE_LEVELS[typeId]
+function gradeLevelsFor(kind, typeId, level) {
+  /* Level first, because it is the narrowest thing that knows: a pack that
+   * declares one has said what it asks, and that outranks what its type or its
+   * kind can guess. An unrecognised level falls through rather than throwing —
+   * the check route is where a bad value is reported, and a listing being
+   * written is far too late to refuse one.
+   */
+  const byLevel = LEVEL_GRADE_LEVELS[level];
+  return ((byLevel && byLevel[kind === 'jeopardy' ? 'quiz' : kind])
+    || TYPE_GRADE_LEVELS[typeId]
     || KIND_GRADE_LEVELS[kind]
     || STORE_GRADE_LEVELS).slice();
 }
@@ -285,7 +347,8 @@ const TEACHING_DURATIONS = [
 
 module.exports = {
   LIMITS, GRADE_LEVELS, STORE_GRADE_LEVELS, KIND_GRADE_LEVELS,
-  TYPE_GRADE_LEVELS, gradeLevelsFor, SUBJECT_AREAS,
+  TYPE_GRADE_LEVELS, LEVEL_GRADE_LEVELS, DECK_LEVELS, gradeLevelsFor,
+  SUBJECT_AREAS,
   FORMATS, TAGS, ALL_TAGS,
   CUSTOM_CATEGORIES, DETAILS, ANSWER_KEY_OPTIONS, TEACHING_DURATIONS, TAX_CODES,
   KIND_CATEGORIES, GAME_DETAILS, matchCustomCategory,
