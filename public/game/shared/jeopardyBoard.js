@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/jeopardyBoard.js (commit c7bc695) by its
+ * Copied from the packet builder's src/jeopardyBoard.js (commit 74c9a5a) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -49,6 +49,24 @@ function validateBoard(board, expected = {}) {
   const names = new Set();
   const answers = new Map();
 
+  /* How many clues a column should hold.
+   *
+   * Generation says so outright. Nothing else did, and for a while nothing
+   * else checked: a pasted pack, a board asked for on its own, and an AI edit
+   * all went through with whatever they happened to carry. A real board
+   * published with four clues in one category of five, and the hole only
+   * showed up as a blank square in front of a class — the printed board and
+   * the score sheet had it too, since both are sized by the longest column.
+   *
+   * Nothing else catches it. The climbing-values check reads 100, 200, 400,
+   * 500 as a perfectly good run, and the grid draws a short column as an empty
+   * cell rather than failing. So where no count was asked for, take the
+   * longest column as the one the others have to match: equal columns are what
+   * a grid IS, not a preference a caller has to remember to state.
+   */
+  const rowCount = expected.cluesPerCategory
+    || categories.reduce((most, cat) => Math.max(most, (cat.clues || []).length), 0);
+
   categories.forEach((cat, ci) => {
     const label = cat.name || `category ${ci}`;
 
@@ -61,8 +79,8 @@ function validateBoard(board, expected = {}) {
     }
 
     const clues = cat.clues || [];
-    if (expected.cluesPerCategory && clues.length !== expected.cluesPerCategory) {
-      problems.push(`"${label}" has ${clues.length} clues, expected ${expected.cluesPerCategory}`);
+    if (rowCount && clues.length !== rowCount) {
+      problems.push(`"${label}" has ${clues.length} clues, expected ${rowCount}`);
     }
 
     let previous = null;

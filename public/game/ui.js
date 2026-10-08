@@ -409,9 +409,36 @@
    * below). Only the review: mid-game the list is meant to be up and gone again
    * in seconds, and a deck of thirty cards is not that.
    */
+  /* What this list is CALLED, which is not "vocabulary" for every pack.
+   *
+   * A forma deck is a bank of conjugated forms — hablé, hablaste, hablamos —
+   * and a list of those headed Vocabulario is simply mislabelled in front of
+   * the class. The other three are vocabulary in any ordinary sense: palabra
+   * is prepositions and question words, and a frase deck puts its glossary on
+   * this screen rather than its sentence bank, which would be the answer key
+   * (see bankItems in jeopardy.js).
+   *
+   * The builder says the same thing for the printed How to Play page
+   * (LIST_LABELS in src/deckTypes.js). That page prints the Spanish of these
+   * buttons in bold, so the two have to agree or the sheet sends a teacher
+   * looking for a button that is not on the screen.
+   */
+  const LIST_LABELS = {
+    forma: { short: 'Formas', see: 'Ver las formas', review: 'Repasar las formas', head: 'Repasemos las formas', noun: 'las formas' },
+  };
+  const LIST_DEFAULT = {
+    short: 'Vocabulario', see: 'Ver vocabulario', review: 'Repasar el vocabulario',
+    head: 'Repasemos el vocabulario', noun: 'el vocabulario',
+  };
+
+  function listLabel(type) {
+    return LIST_LABELS[type] || LIST_DEFAULT;
+  }
+
   function openVocab(container, items, opts = {}) {
     if (!items || !items.length) return;
     const review = opts.moment === 'review';
+    const label = listLabel(opts.type);
     const audible = canSpeakSpanish();
     // Shared by both views, so a word said on a card is marked in the list too.
     const heard = new Set();
@@ -419,11 +446,25 @@
     // Built on first use and kept, so going to the list and back returns to the
     // same card rather than to the first one.
     let deck = null;
+    /* The mid-game peek, optionally on a clock.
+     *
+     * Off unless the teacher asks for it, and then remembered (PEEK_KEY): a
+     * list that closed itself under a teacher who meant to read it out would
+     * be the worse default of the two, since nothing brings back the moment.
+     * Never in the review, which is as long as the class needs.
+     *
+     * The note used to say the list disappeared enseguida whatever was
+     * running, and nothing disappeared: it closed on Cerrar like every other
+     * screen. Now only a real countdown says so, and it counts.
+     */
+    let timed = review ? 0 : readPeek();
+    let left = 0;
+    let ticking = null;
 
     const screen = el('section', 'clue-screen vocab-screen');
     const note = el('div', 'note');
     const head = el('div', 'clue-head');
-    head.append(el('div', 'where', review ? 'Repasemos el vocabulario' : 'Vocabulario'), note);
+    head.append(el('div', 'where', review ? label.head : label.short), note);
     const body = el('div', 'clue-body vocab-body');
     const controls = el('div', 'clue-controls');
 
@@ -438,15 +479,44 @@
       // listener survives and swallows every later key.
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('keyup', onKey, true);
+      stopClock();
       if (deck) deck.stop();
       screen.remove();
     };
 
+    function stopClock() {
+      if (ticking) clearInterval(ticking);
+      ticking = null;
+    }
+
+    function startClock(seconds) {
+      stopClock();
+      timed = seconds;
+      left = seconds;
+      ticking = setInterval(() => {
+        left -= 1;
+        // Through the button, so the listeners and the deck come down with it.
+        if (left <= 0) close.click();
+        else setNote();
+      }, 1000);
+      setNote();
+    }
+
+    function setNote() {
+      if (review) {
+        note.textContent = audible
+          ? 'Toca una palabra para oírla y repítanla juntos'
+          : 'Lean cada palabra en voz alta';
+      } else if (ticking) {
+        note.textContent = `Míralo bien — desaparece en ${left}`;
+      } else {
+        note.textContent = 'Míralo bien — volvemos al juego enseguida';
+      }
+    }
+
     function showList() {
       if (deck) deck.stop();
-      note.textContent = review
-        ? (audible ? 'Toca una palabra para oírla y repítanla juntos' : 'Lean cada palabra en voz alta')
-        : 'Míralo bien — desaparece enseguida';
+      setNote();
 
       const grid = el('div', 'vocab-grid');
       items.forEach((item, i) => {
@@ -476,6 +546,31 @@
         const toCards = el('button', 'small', '🃏 Una por una');
         toCards.onclick = showCards;
         row.append(toCards);
+      } else {
+        /* One press picks the length and starts it, the way the clue screen's
+         * writing timer works — a teacher standing in front of a class should
+         * not have to set a thing and then start it. Pressing the running
+         * length again stops the clock and forgets it.
+         */
+        const clocks = PEEK_LENGTHS.map(secs => {
+          const running = ticking && timed === secs;
+          const btn = el('button',
+            'small' + (secs === PEEK_SUGGESTED && !ticking ? ' suggested' : ''),
+            running ? '⏱ Sin reloj' : `⏱ ${secs}s`);
+          btn.onclick = () => {
+            if (ticking && timed === secs) {
+              stopClock();
+              writePeek(0);
+              timed = 0;
+            } else {
+              startClock(secs);
+              writePeek(secs);
+            }
+            showList();
+          };
+          return btn;
+        });
+        row.append(...clocks);
       }
       row.append(close);
       body.replaceChildren(grid);
@@ -512,6 +607,7 @@
     screen.append(head, body, controls);
     container.append(screen);
     showList();
+    if (timed) startClock(timed);
   }
 
   /* How long the automatic run gives the class at each step.
@@ -749,6 +845,41 @@
     } catch {}
   }
 
+  /* How long the mid-game peek stays up for a teacher who asked for a clock,
+   * and whether they asked. Kept across lessons for the same reason as the
+   * voice above, but stored the other way round: this one is off by default,
+   * so the key is only ever written when it is wanted.
+   *
+   * Long enough to find one word in thirty and read it, short enough that the
+   * room does not settle: the point is a look, not a study break.
+   */
+  const PEEK_KEY = 'scp-vocab-peek';
+  /* Two lengths rather than one, offered the way the writing timer is: there
+   * is no right number here and no way to find one from a desk. 15s is a look
+   * — long enough to find one word in thirty — and 30s is for a class that is
+   * reading the list rather than scanning it. The shorter one is suggested,
+   * because this is a pause in a game and the room settles if it runs long.
+   *
+   * Stored as the number of seconds, so the remembered choice is the length as
+   * well as the fact of it; anything not on the list reads as off.
+   */
+  const PEEK_LENGTHS = [15, 30];
+  const PEEK_SUGGESTED = 15;
+
+  function readPeek() {
+    try {
+      const saved = Number(localStorage.getItem(PEEK_KEY));
+      return PEEK_LENGTHS.includes(saved) ? saved : 0;
+    } catch { return 0; }
+  }
+
+  function writePeek(seconds) {
+    try {
+      if (seconds) localStorage.setItem(PEEK_KEY, String(seconds));
+      else localStorage.removeItem(PEEK_KEY);
+    } catch {}
+  }
+
   function shuffled(list) {
     const out = list.slice();
     for (let i = out.length - 1; i > 0; i--) {
@@ -774,12 +905,12 @@
    * here it could open the word list instead, and every screenshot after that
    * would be of the wrong screen.
    */
-  function reviewButton(container, items) {
-    const btn = el('button', null, '📖 Repasar el vocabulario');
+  function reviewButton(container, items, type) {
+    const btn = el('button', null, '📖 ' + listLabel(type).review);
     // Hidden rather than greyed: an older room published without its word list
     // would otherwise open every lesson on a button that does nothing.
     btn.hidden = !items || !items.length;
-    btn.onclick = () => openVocab(container, items, { moment: 'review' });
+    btn.onclick = () => openVocab(container, items, { moment: 'review', type });
     return btn;
   }
 
@@ -1001,7 +1132,7 @@
   window.RoomUI = {
     el, fitText, topBar,
     hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, englishToggle,
-    displayFace, openVocab, reviewButton, openHowTo, howToButton,
+    displayFace, openVocab, listLabel, reviewButton, openHowTo, howToButton,
     brandMark, moreGames, customizeGame, backToMyGames, afterGame, MORE_GAMES_URL,
     DEFAULT_RATE, RATES, normalizeRate, rateRow,
   };

@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  const { el, englishToggle, canSpeakSpanish, displayFace, openVocab, reviewButton, howToButton,
+  const { el, englishToggle, canSpeakSpanish, displayFace, openVocab, listLabel, reviewButton, howToButton,
     brandMark, moreGames, afterGame, DEFAULT_RATE, normalizeRate, rateRow } = window.RoomUI;
   const fx = window.RoomFX;
 
@@ -237,7 +237,7 @@
       el('h2', null, 'Para ganar'), patternBox,
       el('div', 'award-row', null, [
         // Reads `pattern` when it opens, so the rule shown is the one just picked.
-        howToButton(root, () => howToSteps(pattern)), reviewButton(root, game.items), start,
+        howToButton(root, () => howToSteps(pattern)), reviewButton(root, game.items, room.type), start,
       ]), moreGames());
     const customize = window.RoomUI.customizeGame(room);
     if (customize) wrap.append(customize);
@@ -466,8 +466,8 @@
     // teacher's hand is between calls, and the top bar's corner is already full.
     // Not primary — the screenshot pass draws the first word by pressing this
     // bar's primary button.
-    const vocab = el('button', 'small', 'Vocabulario');
-    vocab.onclick = () => openVocab(root, game.items, { moment: 'reminder' });
+    const vocab = el('button', 'small', listLabel(room.type).short);
+    vocab.onclick = () => openVocab(root, game.items, { moment: 'reminder', type: room.type });
     row.append(vocab);
 
     bar.append(row);

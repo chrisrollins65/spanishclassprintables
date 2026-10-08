@@ -1080,6 +1080,66 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
   font-weight: 800; color: var(--hot);
   animation: flicker 1.4s ease-in-out infinite;
 }
+/* The pre-game option and its ❓, on the setup screen.
+   In a tinted box rather than loose under the team rows: it changes how the
+   game scores, and as a plain line of small text it read as fine print and was
+   missed. The name is the size of something to decide on, the terms sit under
+   it in one quiet line, and the ❓ holds the rest. */
+.option-row {
+  display: flex; align-items: center; justify-content: flex-start;
+  gap: 0.6rem; margin: 0.9rem auto 0; max-width: 34rem; text-align: left;
+  padding: 0.6rem 0.8rem; border-radius: 10px;
+  border: 1.5px solid rgba(190, 0, 135, 0.25); background: rgba(246, 220, 236, 0.45);
+}
+.option-row label { cursor: pointer; display: flex; flex-direction: column; gap: 0.1rem; flex: 1; }
+.option-row .option-name { font-weight: 700; font-size: 1rem; }
+.option-row .option-terms { font-size: 0.8rem; opacity: 0.75; }
+.option-row input { width: 1.2rem; height: 1.2rem; flex: none; cursor: pointer; }
+.option-why {
+  max-width: 34rem; margin: 0.35rem auto 0; padding: 0.6rem 0.8rem;
+  border-radius: 8px; background: rgba(0, 0, 0, 0.04); text-align: left;
+  font-size: 0.85rem; line-height: 1.4;
+}
+.option-why p + p { margin-top: 0.35rem; }
+
+/* A dialog: one card over the board, everything it asks inside it.
+   Above .clue-screen's z-index, since it is always asked from one. */
+.modal {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem; background: rgba(10, 7, 12, 0.72);
+}
+.modal-card {
+  width: min(28rem, 100%);
+  display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
+  padding: 1.4rem 1.6rem;
+  background: var(--panel); border: 2px solid var(--edge); border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  text-align: center;
+  animation: pop-in 0.25s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+.modal-title { font-size: 1.3rem; font-weight: 800; }
+.modal-note { font-size: 0.95rem; }
+.modal-left { font-size: 0.85rem; color: var(--muted); }
+/* In the card, not along the bottom of the screen: the question and the answer
+   to it have to be readable in one glance. */
+.modal-buttons { display: flex; gap: 0.6rem; justify-content: center; margin-top: 0.3rem; }
+.confirm-team {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font-size: 1.05rem; font-weight: 700;
+}
+
+/* What the square drops to, as a picture rather than a sentence: a team
+   deciding in the middle of a timed clue has a glance, not a read. The old
+   value is struck through and dimmed so the eye lands on the new one, which is
+   in the colour this game writes every score in. */
+.price-drop { display: flex; align-items: baseline; gap: 0.6rem; }
+.price-was {
+  font-size: 1.5rem; font-weight: 700; color: var(--muted);
+  text-decoration: line-through; text-decoration-thickness: 2px;
+}
+.price-arrow { font-size: 1.2rem; color: var(--muted); }
+.price-now { font-size: 2.3rem; font-weight: 900; color: var(--gold); }
 @keyframes flicker {
   0%, 100% { transform: scale(1) rotate(0); }
   30% { transform: scale(1.12) rotate(-4deg); }

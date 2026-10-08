@@ -73,9 +73,74 @@
   // How long the "last seconds" of the writing timer are: ticking, and red.
   const URGENT_SECONDS = 5;
 
-  const { el, englishToggle, canSpeakSpanish, speak, openVocab, reviewButton, howToButton,
+  const { el, englishToggle, canSpeakSpanish, speak, openVocab, listLabel, reviewButton, howToButton,
     brandMark, moreGames, afterGame, DEFAULT_RATE, normalizeRate, rateRow } = window.RoomUI;
   const fx = window.RoomFX;
+
+  /* Half a square, bought by the team that needs the word list.
+   *
+   * Off unless the teacher switches it on before the game, and then remembered
+   * for next period. Why a PRICE rather than a free look: a team that already
+   * knows the answer will never pay for one, so the button is only ever
+   * pressed by a team genuinely stuck, and the cost falls on the team that
+   * asked instead of on the ones that did not.
+   *
+   * Why a CAP as well: the price is symmetric. Every team buying on every one
+   * of its own turns halves every score equally and leaves the order of the
+   * game exactly as it was, so the price alone bounds who uses it, never how
+   * often. Two per team is the only hard bound, and it is small enough that a
+   * team spends the first one early rather than sitting on both all period.
+   *
+   * Only the buyer's award is halved; a team that answers after they fail wins
+   * the square whole. That keeps the rest of the room playing for full value,
+   * and it pays the team that did not need the list.
+   */
+  const PEEK_ALLOWANCE = 2;
+  const PEEK_PREF = 'scp-jeopardy-peek-price';
+
+  function readPeekPref() {
+    try { return localStorage.getItem(PEEK_PREF) === '1'; } catch { return false; }
+  }
+
+  function writePeekPref(on) {
+    try {
+      if (on) localStorage.setItem(PEEK_PREF, '1');
+      else localStorage.removeItem(PEEK_PREF);
+    } catch {}
+  }
+
+  /* Who bought a look at the list, by square. One map rather than a map plus a
+   * per-team tally: an allowance is counted off it, so the two can never
+   * disagree, and both survive a refresh with the rest of the game. A game
+   * saved before any of this existed has none, which reads as nobody has.
+   */
+  function peeks() {
+    return (state && state.peeks) || {};
+  }
+
+  function peekBuyer(c, r) {
+    const who = peeks()[`${c}-${r}`];
+    return who == null ? null : who;
+  }
+
+  function peeksLeft(teamIndex) {
+    const used = Object.keys(peeks()).filter(k => peeks()[k] === teamIndex).length;
+    return Math.max(0, PEEK_ALLOWANCE - used);
+  }
+
+  /* What this square pays THIS team: half to whoever bought a look at it, full
+   * to everyone else. Rounded down, so the team that asked for help is never
+   * put ahead by the arithmetic.
+   */
+  function fullValue(c, r) {
+    const clue = game.categories[c].clues[r];
+    return isDaily(c, r) ? clue.value * 2 : clue.value;
+  }
+
+  function awardFor(c, r, teamIndex) {
+    const value = fullValue(c, r);
+    return peekBuyer(c, r) === teamIndex ? Math.floor(value / 2) : value;
+  }
 
   let root, room, game, state, timer;
   // A score that has just changed, to be counted up the next time the board
@@ -199,6 +264,54 @@
      * The one case this screen really had to answer, a browser with no Spanish
      * voice, needs no control at all: `heard` falls back to showing the clue.
      */
+    /* The one option on this screen, and it is off until a teacher asks.
+     *
+     * The listening control above was taken off this screen because it changed
+     * what the pack ASKS, invisibly. This one changes no content: it adds a
+     * move a team may make, the allowances sit on the score strip all game,
+     * and it has to be settled before anyone picks or it is not fair to the
+     * team that picked first. That makes it the writing timer's kind of
+     * control, not that one's.
+     *
+     * Off by default because every pack already sold describes a game without
+     * it: a teacher who printed How to Play in September should not meet a new
+     * scoring rule in October that their sheet has never heard of. Remembered
+     * instead, so a teacher who wants it switches it on once.
+     */
+    const noun = listLabel(room.type).noun;
+    const priceBox = el('input');
+    priceBox.type = 'checkbox';
+    priceBox.id = 'peek-price';
+    priceBox.checked = readPeekPref();
+    /* Named first, costed second.
+     *
+     * This read as one long sentence of rules — "un equipo puede ver el
+     * vocabulario a cambio de la mitad de la casilla" — which a teacher meeting
+     * it for the first time has to parse before they know whether it is even
+     * something they want. A comodín is what a Spanish game show calls a
+     * lifeline, so the name alone says what KIND of thing this is, and the
+     * terms go underneath in one short line. The ❓ still has the whole rule.
+     */
+    const priceText = el('label', null, null, [
+      el('span', 'option-name', `📖 Comodín: ver ${noun}`),
+      el('span', 'option-terms', `Gana la mitad de la casilla · ${PEEK_ALLOWANCE} por equipo`),
+    ]);
+    priceText.htmlFor = 'peek-price';
+    const priceWhy = el('div', 'option-why');
+    priceWhy.hidden = true;
+    priceWhy.append(
+      el('p', null, `El equipo al que le toca puede pedir ver ${noun} durante una pista. Si acierta, gana la mitad de la casilla; cualquier otro equipo que conteste después gana la casilla entera. Cada equipo puede hacerlo ${PEEK_ALLOWANCE} veces por partida, y no en la apuesta final.`),
+      el('p', 'howto-en', `The team whose turn it is may ask to see the word list during a clue. If they get it right they win half the square; any other team answering after them wins it in full. Each team may do this ${PEEK_ALLOWANCE} times a game, and never on the final wager.`)
+    );
+    const priceWhyBtn = el('button', 'ghost small howto-btn', '❓');
+    priceWhyBtn.type = 'button';
+    priceWhyBtn.title = 'Cómo funciona';
+    priceWhyBtn.onclick = () => { priceWhy.hidden = !priceWhy.hidden; };
+    // Hidden with the review button, and for the same reason: a room published
+    // without its word list has nothing to sell a look at.
+    const priceRow = el('div', 'option-row', null, [priceBox, priceText, priceWhyBtn]);
+    priceRow.hidden = !bankItems().length;
+
     const start = el('button', 'primary', '¡Empezar!');
     start.onclick = () => {
       const teams = [...rows.children]
@@ -212,15 +325,21 @@
           };
         });
       if (teams.length < 2) return;
-      state = { teams, turn: 0, used: [], daily: pickDailyCell(), rate: DEFAULT_RATE };
+      const priced = priceBox.checked && !priceRow.hidden;
+      writePeekPref(priced);
+      // On the game, not read back off the preference: a teacher who changes
+      // the box for their next class must not change the rules of the game
+      // already saved in this room.
+      state = { teams, turn: 0, used: [], daily: pickDailyCell(), rate: DEFAULT_RATE, priced, peeks: {} };
       save();
       fx.play('start');
       renderBoard({ intro: true });
     };
 
     wrap.append(addBtn);
+    wrap.append(priceRow, priceWhy);
     wrap.append(el('div', 'award-row', null, [
-      howToButton(root, () => howToSteps(null)), reviewButton(root, bankItems()), start,
+      howToButton(root, () => howToSteps(null)), reviewButton(root, bankItems(), room.type), start,
     ]), moreGames());
     const customize = window.RoomUI.customizeGame(room);
     if (customize) wrap.append(customize);
@@ -296,6 +415,15 @@
         icon: '💸',
         es: 'Al final, cada equipo apuesta parte de su dinero en una última pista. ¡Si acierta, lo gana; si falla, lo pierde!',
         en: 'At the end, every team bets some of its money on one last clue. Right: it wins the bet. Wrong: it loses it.',
+      },
+      /* Only when the teacher switched it on, which is why this panel takes
+       * the game in progress rather than reading the preference: the rules the
+       * class is read are the rules THIS game is being played by. A room where
+       * the option is off must not hear about a move nobody can make. */
+      playing && playing.priced && {
+        icon: '📖',
+        es: `Cada equipo tiene ${PEEK_ALLOWANCE} comodines: puede pedir ver ${listLabel(room.type).noun} y ganar la mitad de la casilla. Los demás equipos la ganan entera.`,
+        en: `If they are stuck, a team can ask to see the word list: they win half the square, and the other teams win it whole. ${PEEK_ALLOWANCE} times per team.`,
       },
       {
         icon: '🏆',
@@ -1061,10 +1189,140 @@
   // (see openVocab in ui.js). A room published without its item bank has no
   // list to show, and says so by greying the button rather than hiding it.
   function vocabButton(label) {
-    const btn = el('button', 'small', label || 'Vocabulario');
+    const btn = el('button', 'small', label || listLabel(room.type).short);
     btn.disabled = !bankItems().length;
-    btn.onclick = () => openVocab(root, bankItems(), { moment: 'reminder' });
+    btn.onclick = () => openVocab(root, bankItems(), { moment: 'reminder', type: room.type });
     return btn;
+  }
+
+  /* The list on a clue screen: free as it always was, or sold by the square.
+   *
+   * Only here. From the board it stays the teacher's own free control — no
+   * clue is live, so there is nothing to gain and nobody to charge — and the
+   * final has no square to halve, which is why the wager screen keeps the
+   * plain button too.
+   *
+   * It is charged to the team whose turn it is, never to whoever the teacher
+   * might have meant: that team is the only one that can win the square at
+   * full value, so it is the only one with anything to spend.
+   */
+  function peekButton(c, r, awardRow, showAnswer) {
+    const label = listLabel(room.type);
+    if (!state.priced) return vocabButton(label.see);
+
+    const buyer = peekBuyer(c, r);
+    const team = state.teams[state.turn];
+    const left = peeksLeft(state.turn);
+    const open = () => openVocab(root, bankItems(), { moment: 'reminder', type: room.type });
+
+    // Bought already: the price is paid, so it opens as often as they like.
+    if (buyer !== null) {
+      const btn = el('button', 'small', label.see);
+      btn.onclick = open;
+      return btn;
+    }
+
+    const half = Math.floor(fullValue(c, r) / 2);
+    /* "Comodín" is what a Spanish game show calls a lifeline, so the button
+     * names itself to a teacher and to the class, which a sentence of rules
+     * could not. The price rides with it because that is the whole decision;
+     * how many are left belongs on the confirm, where it is acted on.
+     *
+     * Spent, it stays and counts rather than vanishing. A control that
+     * disappears reads as a bug, and the team that has run out is the one that
+     * most needs to see why nothing happens.
+     */
+    const btn = el('button', 'small', left
+      ? `📖 Comodín (${money(half)})`
+      : `📖 Comodín (0 de ${PEEK_ALLOWANCE})`);
+    btn.disabled = !bankItems().length || left === 0;
+    btn.onclick = () => confirmPeek(c, r, awardRow, btn, open, showAnswer);
+    return btn;
+  }
+
+  /* What it costs, before it is spent.
+   *
+   * A panel rather than window.confirm: a native dialog blocks the room, and
+   * this one has three things to say that a one-line prompt cannot. It names
+   * the team, because the charge falls on them and not on the class; it says
+   * what the OTHER teams still stand to win, which is the half of the rule
+   * that keeps them writing; and it counts what is left, with the noun in it
+   * — "les queda 1" on its own answers "one what?".
+   */
+  function confirmPeek(c, r, awardRow, btn, open, showAnswer) {
+    const label = listLabel(room.type);
+    const team = state.teams[state.turn];
+    const full = fullValue(c, r);
+    const half = Math.floor(full / 2);
+    const after = peeksLeft(state.turn) - 1;
+
+    /* A card over the board, not another screen.
+     *
+     * This was built as a clue-screen at first, which is the full-page layout a
+     * CLUE is projected in: heading hard against the top edge, body centred,
+     * controls along the bottom. That is right for something the back row
+     * reads and wrong for something the teacher decides — the question ended
+     * up so far from the buttons that it went unread, and the whole thing
+     * looked like the game had moved on to another page rather than asked
+     * anything. Everything a decision needs is inside one card: what is being
+     * asked, what it costs, and the two ways out.
+     */
+    const backdrop = el('div', 'modal');
+    const card = el('div', 'modal-card');
+
+    /* The cost, as a picture of itself.
+     *
+     * "Gana $150 en vez de $300" is a sentence to read; the struck-out old
+     * number beside the new one is the same fact at a glance, which is what a
+     * team deciding in the middle of a timed clue actually has time for.
+     */
+    const drop = el('div', 'price-drop', null, [
+      el('span', 'price-was', money(full)),
+      el('span', 'price-arrow', '→'),
+      el('span', 'price-now', money(half)),
+    ]);
+
+    card.append(
+      el('h2', 'modal-title', '¿Usar un comodín?'),
+      el('p', 'confirm-team', null, [teamBadge(team), el('span', null, team.name)]),
+      drop,
+      el('p', 'modal-note', `Ver ${label.noun}. Los demás equipos ganan la casilla entera.`),
+      el('p', 'modal-left', `Comodines restantes: ${after}`)
+    );
+
+    function close() {
+      document.removeEventListener('keydown', onKey, true);
+      backdrop.remove();
+    }
+
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      // Captured and stopped, or Escape would close the clue underneath too.
+      e.stopImmediatePropagation();
+      close();
+    }
+
+    const no = el('button', 'small', 'Cancelar');
+    no.onclick = close;
+    const yes = el('button', 'primary', `Ver ${label.noun}`);
+    yes.onclick = () => {
+      state.peeks = { ...peeks(), [`${c}-${r}`]: state.turn };
+      save();
+      close();
+      // The award buttons are on screen offering the full value, so they are
+      // rebuilt before the list goes up rather than after it closes.
+      awardRow.replaceChildren(...awardButtons(c, r, full, showAnswer));
+      btn.replaceWith(peekButton(c, r, awardRow, showAnswer));
+      open();
+    };
+
+    card.append(el('div', 'modal-buttons', null, [no, yes]));
+    // A press on the dark outside is a cancel, the way every dialog behaves.
+    backdrop.onclick = e => { if (e.target === backdrop) close(); };
+    document.addEventListener('keydown', onKey, true);
+    backdrop.append(card);
+    root.append(backdrop);
+    yes.focus();
   }
 
   /* What the class may see when the teacher presses Vocabulario.
@@ -1360,10 +1618,11 @@
       if (onAnswered) onAnswered();
     }
 
+    const awardRow = el('div', 'award-row', null, awardButtons(c, r, value, showAnswer));
     controls.append(
       el('p', 'hint', 'Todos escriben en su hoja. Empieza el equipo que eligió; si falla, pasa al siguiente.'),
-      el('div', 'award-row', null, awardButtons(c, r, value, showAnswer)),
-      el('div', 'award-row', null, [timerGroup, vocabButton('Ver vocabulario'), revealBtn])
+      awardRow,
+      el('div', 'award-row', null, [timerGroup, peekButton(c, r, awardRow, showAnswer), revealBtn])
     );
 
     /* The answer is its own row between the clue and the controls, never the
@@ -1443,7 +1702,10 @@
       const idx = (state.turn + i) % state.teams.length;
       const team = state.teams[idx];
       const btn = el('button', null);
-      btn.append(teamBadge(team), document.createTextNode(`${team.name} +${money(value)}`));
+      // What each button offers is what that team would actually win, so the
+      // halved square is on the screen before anyone is awarded rather than
+      // being a surprise in the score strip afterwards.
+      btn.append(teamBadge(team), document.createTextNode(`${team.name} +${money(awardFor(c, r, idx))}`));
       btn.onclick = () => { showAnswer(); resolveClue(c, r, idx); };
       buttons.push(btn);
     }
@@ -1458,7 +1720,7 @@
     // The doubled value goes to whoever answers it, not to whoever picked it:
     // the square is worth double, full stop, and that needs no adjudicating.
     const daily = isDaily(c, r);
-    const value = daily ? clue.value * 2 : clue.value;
+    const value = teamIndex === null ? 0 : awardFor(c, r, teamIndex);
     let pop = null;
     let team = null;
     if (teamIndex !== null) {

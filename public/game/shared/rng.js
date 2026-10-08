@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/rng.js (commit c7bc695) by its
+ * Copied from the packet builder's src/rng.js (commit 74c9a5a) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */

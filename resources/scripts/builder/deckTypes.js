@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/deckTypes.js (commit c7bc695) by its
+ * Copied from the packet builder's src/deckTypes.js (commit 74c9a5a) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -944,6 +944,32 @@ const DECK_TYPES = {
  * @param {string} [id]
  * @returns {object} the deck type
  */
+/* What the word list is CALLED on the website, in Spanish.
+ *
+ * It lives here because the printed How to Play page names those buttons in
+ * bold — the page's own rule is that the Spanish in bold is what the screen
+ * says — so the two have to be decided in one place or the sheet sends a
+ * teacher looking for a button that does not exist.
+ *
+ * Only `forma` differs. That deck's bank is conjugated forms — hablé,
+ * hablaste, hablamos — and a list of those headed "Vocabulario" is mislabelled
+ * in front of the class. `palabra` is prepositions and question words, which
+ * are vocabulary in any ordinary sense, and a `frase` deck shows its glossary
+ * on that screen rather than its sentence bank, which would be the answer key.
+ *
+ * The site keeps the same table in its own code (LIST_LABELS in
+ * public/game/ui.js), because nothing here is served to a browser. Change one,
+ * change both.
+ */
+const LIST_LABELS = {
+  forma: { short: 'Formas', review: 'Repasar las formas' },
+};
+const LIST_DEFAULT = { short: 'Vocabulario', review: 'Repasar el vocabulario' };
+
+function listLabel(id) {
+  return LIST_LABELS[id] || LIST_DEFAULT;
+}
+
 function deckType(id) {
   if (!id) return VOCABULARIO;
   const type = DECK_TYPES[id];
@@ -953,4 +979,4 @@ function deckType(id) {
   return type;
 }
 
-module.exports = { deckType, DECK_TYPES, NOT_A_QUESTION_TYPE };
+module.exports = { deckType, listLabel, DECK_TYPES, NOT_A_QUESTION_TYPE };
