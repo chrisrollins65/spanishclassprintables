@@ -33,6 +33,10 @@ class CreditsController extends Controller
             'token' => (string) config('paddle.client_token'),
             'environment' => (string) config('paddle.environment'),
             'justBought' => $request->boolean('bought'),
+            // The balance before the checkout opened, carried through Paddle's
+            // redirect: the page this lands on is a fresh one, and without it
+            // there is no telling whether the webhook has already been.
+            'boughtFrom' => max(0, $request->integer('from')),
         ]);
     }
 

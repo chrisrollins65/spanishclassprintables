@@ -48,7 +48,9 @@
     @endif
 
     @if ($justBought)
-      <p class="notice waiting on" id="waiting">Thank you! Your credits land here the moment the payment clears — usually a second or two.</p>
+      <p class="notice waiting on" id="waiting">{{ $credits > $boughtFrom
+          ? 'Your credits are here. Go and make a game.'
+          : 'Thank you! Your credits land here the moment the payment clears — usually a second or two.' }}</p>
     @endif
 
     @if (! $token || ! $packs)
@@ -101,11 +103,18 @@
       token: @json($token),
       eventCallback: function (event) {
         // Provisioning is the webhook's job; this only tells the teacher.
-        if (event.name === 'checkout.completed') waitForCredits();
+        if (event.name === 'checkout.completed') waitForCredits(@json($credits));
       },
     });
 
     showPrices();
+
+    /* Paddle's successUrl reloads the page, which ends the wait the callback
+     * started — so the page it lands on has to take the wait up again, from
+     * the balance before the checkout rather than the one it was drawn with. */
+    @if ($justBought && $credits <= $boughtFrom)
+      waitForCredits(@json($boughtFrom));
+    @endif
 
     /* What each pack costs, from Paddle rather than from us.
      *
@@ -170,7 +179,7 @@
           customData: { user_id: @json((string) auth()->id()) },
           settings: {
             variant: 'one-page',
-            successUrl: @json(route('credits', ['bought' => 1])),
+            successUrl: @json(route('credits', ['bought' => 1, 'from' => $credits])),
           },
         });
       };
@@ -178,14 +187,18 @@
 
     /* The webhook arrives on its own connection, so the page watches its own
      * balance rather than assuming the money has landed. */
-    function waitForCredits() {
+    function waitForCredits(started) {
       var waiting = document.getElementById('waiting');
       if (waiting) waiting.classList.add('on');
-      var started = @json($credits);
       var tries = 0;
 
       (function check() {
-        if (tries++ > 20) return;
+        if (tries++ > 20) {
+          // About half a minute. Paddle keeps retrying the webhook, so the
+          // credits are late, not lost — say so rather than wait in silence.
+          if (waiting) waiting.textContent = 'This is taking longer than usual. Your credits will appear — refresh in a minute or two.';
+          return;
+        }
         setTimeout(function () {
           fetch(@json(route('credits.balance')), { credentials: 'same-origin', cache: 'no-store' })
             .then(function (res) { return res.json(); })
