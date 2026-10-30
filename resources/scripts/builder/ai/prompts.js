@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/ai/prompts.js (commit 74c9a5a) by its
+ * Copied from the packet builder's src/ai/prompts.js (commit 9bae0d3) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -391,7 +391,10 @@ function wrapWithJsonFormat(creativePrompt, type, avoid = []) {
 // Every categorisation field on the TpT upload form is a fixed list, so the
 // listing has to be written against the real vocabulary or the values silently
 // fail to attach. See src/tptVocab.js for where these came from.
-const { LIMITS, SUBJECT_AREAS, TAGS, CUSTOM_CATEGORIES } = require('../tptVocab');
+const {
+  LIMITS, SUBJECT_AREAS, TAGS, CUSTOM_CATEGORIES,
+  TYPE_GRADE_LEVELS, DECK_LEVELS, gradeLevelsFor,
+} = require('../tptVocab');
 
 // Handed to the model as a grouped menu; the grouping is what stops it from
 // spending all six tag slots on themes and none on what the resource is.
@@ -665,14 +668,66 @@ const { deckType, DECK_TYPES, NOT_A_QUESTION_TYPE } = require('../deckTypes');
  *
  * The examples here are deliberately off-topic for any one pack, so the model
  * copies the pattern rather than the words.
+ *
+ * The dialect lives here because it is a fact about the buyer, not the deck:
+ * every type writes for a US teacher, and US curricula teach Latin American
+ * Spanish. Left unsaid, a model drifts to Spain's usage — "sitio", "montar en
+ * bicicleta", "el ordenador" — which a teacher then has to correct by hand.
  */
+const LEARNER_DIALECT = `Write the Spanish of Latin America, which is what US classrooms teach: "ustedes", never "vosotros", and where Spain says it differently, the word Latin America uses — la computadora, not el ordenador; el jugo, not el zumo; la papa, not la patata; el lugar, not el sitio. Where Latin America itself is split, choose the word most widely understood and use it the same way throughout.`;
+
 const LEARNER_AUDIENCE = `WHO THIS IS FOR
-The children are English speakers in US classrooms who are LEARNING Spanish, grades 2 to 8, most of them beginners. They are not Spanish speakers. Write every clue for a child who knows the answer word and a few hundred everyday Spanish words — not for a Spanish-speaking child of the same age.`;
+The children are English speakers in US classrooms who are LEARNING Spanish, grades 2 to 8, most of them beginners. They are not Spanish speakers. Write every clue for a child who knows the answer word and a few hundred everyday Spanish words — not for a Spanish-speaking child of the same age.
+
+${LEARNER_DIALECT}`;
+
+/* Who the learner is, for packs sold above the vocabulary line's grades.
+ *
+ * Every type used to be told "grades 2 to 8", including the sentence deck,
+ * which is sold 7th-12th, and the subjunctive, sold 9th-12th — so the model
+ * pitched a Spanish 3 dictation at second graders, and the translation doc's
+ * own warning ("a pack of sentences simple enough for a fourth grader is a pack
+ * with no customer") was contradicted by the prompt that writes the pack.
+ *
+ * The grades come from tptVocab's tables, the same ones the listing is stamped
+ * from, so the writing and the sale cannot disagree. The writing is pitched at
+ * the YOUNGEST grade of the band, which is the safe direction: a clue an 8th
+ * grader can follow is a clue a 10th grader can follow. A grammar pack with no
+ * level gets the span of all three levels and so is written for a 5th grader,
+ * the youngest any grammar pack is sold to.
+ *
+ * Vocabulary is deliberately untouched: its text is the constant above, word
+ * for word.
+ */
+function learnerAudience(type = deckType()) {
+  const games = type.games || ['bingo', 'quiz'];
+  let grades;
+  if (type.id === 'forma' || type.id === 'palabra') {
+    const levels = type.level ? [type.level] : DECK_LEVELS;
+    grades = levels.flatMap(level => games.flatMap(kind => gradeLevelsFor(kind, type.id, level)));
+  } else if (TYPE_GRADE_LEVELS[type.id]) {
+    grades = games.flatMap(kind => gradeLevelsFor(kind, type.id));
+  } else {
+    return LEARNER_AUDIENCE;
+  }
+  const years = grades.map(g => parseInt(g, 10));
+  const from = Math.min(...years);
+  const to = Math.max(...years);
+  const youngest = grades.find(g => parseInt(g, 10) === from).replace(/ Grade$/, '');
+  const who = TYPE_GRADE_LEVELS[type.id]
+    ? `The students are English speakers in US middle and high schools who are LEARNING Spanish, grades ${from} to ${to}. They are not Spanish speakers. Write for the youngest of them, a ${youngest} grader: ordinary words a Spanish class has met, in situations a ${from + 5}-year-old knows. The difficulty belongs in the structure of the sentence, never in rare words — and a sentence a 5th grader could manage teaches this class nothing.`
+    : `The students are English speakers in US classrooms who are LEARNING Spanish, grades ${from} to ${to}, in a class that is meeting this structure now. They are not Spanish speakers. Write every clue for the youngest of them, a ${youngest} grader who knows what is being practiced and a few hundred everyday Spanish words — not for a Spanish-speaking child of the same age. Write for their age as well as their Spanish: everyday situations, never babyish ones.`;
+  return `WHO THIS IS FOR
+${who}
+
+${LEARNER_DIALECT}`;
+}
 
 /* The audience is shared; what makes a good CLUE is not.
  *
- * Who the child is never changes — an English-speaking beginner in a US
- * classroom — so that paragraph is one constant every type is held to. The
+ * Who the learner is — an English-speaking student in a US classroom, learning
+ * Spanish — is one paragraph every type is held to; only the grades in it
+ * follow the type's band (learnerAudience, above). The
  * rules under it are instructions about a particular kind of clue, and they do
  * not survive a change of kind: "describe it, do not define it" has nothing to
  * say about a verb form, and a swap test phrased as "what it is made of, what
@@ -686,7 +741,7 @@ The children are English speakers in US classrooms who are LEARNING Spanish, gra
  * answer. See src/deckTypes.js.
  */
 function learnerRules(type = deckType()) {
-  return `${LEARNER_AUDIENCE}
+  return `${learnerAudience(type)}
 
 ${type.clueRules}`;
 }
@@ -783,6 +838,41 @@ Return exactly ${count} items. Only return valid JSON, nothing else.`;
  * so the check has to ask what could actually fill the gap, which means asking
  * a model.
  */
+/* The audits' "hard" question, shared by the bank and the board.
+ *
+ * It used to say "most clues should have none" and leave the rest to the
+ * model, which then listed something in most clues — "voz" as too hard for
+ * "cantar", "tela" for "mantel", "sed" for "agua". Measured on the Día de los
+ * Muertos pack, it flagged fifteen of twenty-six squares, and the one real
+ * defect among them sat unread in the pile. A check that flags everything is
+ * a check nobody reads, so this one says what does NOT count: the same
+ * first-units vocabulary VOCABULARIO_CLUE_RULES lets a clue be built from, the
+ * pack's own words, and cognates.
+ */
+function hardQuestion(example) {
+  return `"hard": any word in the clue, other than the answer, that most of this class would stop on AND that is harder than the answer itself. A clue harder than its answer cannot lead a child to it: ${example}
+Do NOT list:
+- the words of a first-year class's first units — the body, colours, numbers, home, school, family, food, the weather, everyday verbs, and the plain nouns that go with them: "voz" in a clue for "cantar", "sed" for "agua", "fuego" for "cocinar", "tela" for "mantel";
+- a word that is itself on the list above — the class has studied it;
+- a cognate an English reader knows on sight: "gigante", "insecto", "decorada", "momento".
+List a word only when you are sure a beginner would not know it. Most clues have none: listing words in more than one clue in five means you are listing ordinary words.`;
+}
+
+/* The audits' fourth question: does a clue for a culture word say what it is?
+ *
+ * Its own question, not a sentence on the end of "specific". Asked as part of
+ * specific — "judge as a child who has never seen it" — it caught the sugar
+ * skull final once in three runs: the auditor knows what a sugar skull looks
+ * like, so a clue that only lands for someone who knows reads as specific to
+ * it. This asks something it can check from the text: does the clue SAY what
+ * the thing is, or only mention things about it a reader would have to have
+ * seen already?
+ */
+const ASSUMES_QUESTION = `"assumes": true when the answer is a custom, dish, decoration, place or tradition of the topic's culture AND the clue only lands for someone who has already seen that thing — it names details about it (where it goes, what is written on it, when it is used) without ever saying what it IS: its shape, what it is made of, what it is for. The children are US students who have never seen this topic's culture outside this lesson.
+  Assumes it: "En la ofrenda hay una ___ blanca y dulce con el nombre de mi abuelo en la frente." (la calavera de azúcar — nothing says it is a candy shaped like a skull)
+  Says what it is: "Es un dulce blanco con forma de cabeza de esqueleto."
+False for an everyday answer (a table, water, to dance) and for any clue that says what the thing is. Leave it out when false.`;
+
 function buildGapAuditPrompt(items, type = deckType()) {
   const bank = items.map(i => i.face).join(', ');
   const entries = auditEntries(items);
@@ -799,16 +889,18 @@ Below are the clues. A [gap] clue is a sentence with the answer replaced by ___.
 
 ${numbered}
 
-For EACH clue answer THREE separate questions.
+For EACH clue answer FOUR separate questions.
 
 1. "fits": which words from the list above the clue could point at — for a gap, which could fill it; for a description, which it could describe. Judge only against the list. A clue is fine when exactly one does; two or more means a child holding a card has two right answers and no way to choose.
 
 2. ${type.auditSpecific}
 
-3. "hard": any word in the clue, other than the answer, that a beginner learning Spanish is unlikely to know AND that is harder than the answer itself. A clue harder than its answer cannot lead a child to it: "Objeto duro que se pone para no lastimarse el cráneo" for "casco" is hard because of "cráneo" and "lastimarse". Most clues should have none; do not list ordinary words.
+3. ${hardQuestion('"Objeto duro que se pone para no lastimarse el cráneo" for "casco" is hard because of "cráneo" and "lastimarse".')}
+
+4. ${ASSUMES_QUESTION}
 
 Return your response as JSON in this format:
-{"checks": [{"n": 1, "fits": ["luna"], "specific": true, "hard": []}, {"n": 2, "fits": ["casco"], "specific": true, "hard": ["cráneo", "lastimarse"]}]}
+{"checks": [{"n": 1, "fits": ["luna"], "specific": true, "hard": []}, {"n": 2, "fits": ["casco"], "specific": true, "hard": ["cráneo", "lastimarse"]}, {"n": 3, "fits": ["piñata"], "specific": true, "hard": [], "assumes": true}]}
 Include every clue. Only return valid JSON, nothing else.`;
 }
 
@@ -851,6 +943,53 @@ Also mark ok:false when the ENGLISH does not match the form, since that is the o
 Return your response as JSON in this format:
 {"checks": [{"n": 1, "ok": true}, {"n": 7, "ok": false, "should": "compramos", "why": "comparamos is from comparar, not comprar"}]}
 Include every entry. Only return valid JSON, nothing else.`;
+}
+
+/* Is each WORD worth a square, and can a child picture its English?
+ *
+ * Every other audit takes the words as given and judges the clues around them,
+ * which is how a Día de los Muertos bank shipped "el papel picado = the
+ * cut-paper banner" with five polished clues: the $100 square asked a fourth
+ * grader how to say an English phrase most adults can't picture. Nothing
+ * there was ambiguous, hard or wrong, so no clue check had a question it fit
+ * under.
+ *
+ * Three questions, because three different things go wrong. The English can be
+ * a word a child doesn't use, which is a clue fix. The Spanish can be the
+ * specific word where the general one teaches more (mariposa monarca for
+ * mariposa), which is a word swap.
+ *
+ * Its examples are off any one topic, like the generation prompts', so a model
+ * auditing a pack is not handed that pack's answers. And a word can belong to the culture alone —
+ * that is not a defect in itself, because on a culture topic those are the
+ * words the teacher is buying, so the question is whether it is one of the few
+ * the topic is expected to carry. The topic is passed in for that judgment
+ * alone.
+ */
+function buildWordAuditPrompt(topic, items) {
+  const numbered = items
+    .map((i, n) => `${n + 1}. ${[i.article, i.face].filter(Boolean).join(' ')} = ${i.en || '(no English)'}`)
+    .join('\n');
+
+  return `You are checking the WORD LIST of a Spanish classroom game about "${topic}". The players are English-speaking children in US schools, grades 3 to 10, most of them beginners in Spanish, with no background in Spanish-speaking or Latin American culture beyond what the class teaches them.
+
+Judge the words themselves, not their clues.
+
+${numbered}
+
+For EACH word answer THREE separate questions.
+
+1. "english": would an American 8-year-old understand the English as written, and picture the thing? It is read out as a clue and asked on the quiz board as "How do you say «...» in Spanish?". "the moon", "the candle", "the shovel" are fine. "the lectern" and "the trellis" are not — most children cannot picture them. When the answer is no, give "enBetter": a short English a child does use that still names THIS thing ("the stand for sheet music", "the wooden frame for climbing plants"). It may use a word spelled the same in Spanish; it must not contain another Spanish word from the list.
+
+2. "plainer": is there a more general or more common Spanish word that a beginner would get more use out of, and that would still work in a game about this topic? "flor" for "girasol", "árbol" for "roble". Give it only when the plainer word is clearly the better thing to teach — not a synonym, not a regional variant, and not when the specific thing IS the topic. Leave it out when the word is fine.
+
+3. "culture": true when the word only makes sense inside the topic's culture — a dish, a decoration, a custom, a plant a child has never seen. When true, also say "core": true when it is one of the handful of words a Spanish teacher would expect to see on a word list for "${topic}" (the words the pack would feel incomplete without), false when it is a word few teachers would teach. A culture word that is not core is a word to replace.
+
+Most words should need nothing. Do not flag ordinary words to have something to say.
+
+Return your response as JSON in this format:
+{"checks": [{"n": 1}, {"n": 2, "english": false, "enBetter": "the stand for sheet music"}, {"n": 3, "plainer": "flor"}, {"n": 4, "culture": true, "core": true}, {"n": 5, "culture": true, "core": false}]}
+Include every word; a word that needs nothing is just {"n": ...}. Only return valid JSON, nothing else.`;
 }
 
 /* The clues the audit judges, in the order it numbers them.
@@ -979,7 +1118,7 @@ ${type.finalPromptEnField}
 
 Its answer must be a word NO square on the board uses. Every team has just played through the board, so an answer already seen there is one they have been handed.
 
-This is the last and biggest clue of the game. It may ask a little more than the ${topValue} squares — the teams can see it, they get longer to think, and they have all bet on it — but it must still be reachable by a beginner under the rules above. A final nobody can get is a round where everybody loses their money at once.`;
+This is the last and biggest clue of the game. It may ask a little more than the ${topValue} squares — the teams can see it, they get longer to think, and they have all bet on it — but it must still be reachable by a beginner under the rules above. "More" means more Spanish, never more knowledge of the culture: the clue still explains what the thing is. A final nobody can get is a round where everybody loses their money at once.`;
 }
 
 /* What the board may take from the bank, and what it must write itself.
@@ -1241,16 +1380,18 @@ Below are the clues. A [gap] clue is a sentence with the answer replaced by ___.
 
 ${numbered}
 
-For EACH clue answer THREE separate questions.
+For EACH clue answer FOUR separate questions.
 
 1. "fits": which answers from the list above the clue could point at. Exactly one is fine. Two or more means the screen will mark a team wrong for an answer that was just as good as the intended one.
 
 2. "specific": could someone who has NEVER SEEN that list still land on the intended answer, from the clue alone? Judge this without the list. This is the question that matters most here, because the teams really do have no list: a clue that only works by elimination does not work at all. "Es un animal que vive en casa" is not specific - a dog, a cat and a fish all fit. "Vive en casa, dice «guau» y mueve la cola" is.
 
-3. "hard": any word in the clue, other than the answer, that a beginner learning Spanish is unlikely to know AND that is harder than the answer itself. A clue harder than its answer cannot lead a child to it: "Son cables con bombillas de colores que brillan por la noche" for "luces" is hard because of "cables" and "bombillas". Judge a [heard, not shown] clue more strictly - there is no text to puzzle over, so a single unknown word can sink the whole sentence. Most clues should have none; do not list ordinary words.
+3. ${hardQuestion('"Son cables con bombillas de colores que brillan por la noche" for "luces" is hard because of "cables" and "bombillas". Judge a [heard, not shown] clue more strictly - there is no text to puzzle over, so a single unknown word can sink the whole sentence.')}
+
+4. ${ASSUMES_QUESTION}
 
 Return your response as JSON in this format:
-{"checks": [{"n": 1, "fits": ["árbol"], "specific": true, "hard": []}, {"n": 2, "fits": ["luces"], "specific": true, "hard": ["cables", "bombillas"]}]}
+{"checks": [{"n": 1, "fits": ["árbol"], "specific": true, "hard": []}, {"n": 2, "fits": ["luces"], "specific": true, "hard": ["cables", "bombillas"]}, {"n": 3, "fits": ["piñata"], "specific": true, "hard": [], "assumes": true}]}
 Include every clue. Only return valid JSON, nothing else.`;
 }
 
@@ -1594,6 +1735,7 @@ module.exports = {
   buildGamePackPrompt,
   buildGapAuditPrompt,
   buildFormAuditPrompt,
+  buildWordAuditPrompt,
   auditEntries,
   buildBoardAuditPrompt,
   boardAuditEntries,

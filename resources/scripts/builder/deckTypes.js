@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/deckTypes.js (commit 74c9a5a) by its
+ * Copied from the packet builder's src/deckTypes.js (commit 9bae0d3) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -26,7 +26,7 @@
  *
  * It is required FROM `ai/prompts.js` and never the other way round, so a type
  * never reaches back into the prompts. What stayed behind there is the one thing
- * every type shares: LEARNER_AUDIENCE, who the child is. What makes a good clue
+ * every type shares: who the learner is (learnerAudience). What makes a good clue
  * came here as each type's `clueRules`, because it is not the same question for a
  * noun and for a verb form — see FORMA_CLUE_RULES.
  */
@@ -42,7 +42,7 @@
 const ITEM_RULES = `For each one provide:
 - "face": the Spanish word on its own, WITHOUT any article — "luna", "bosque", "valiente", "saltar". It is printed in a small square on a bingo card, so keep it to three words at most.
 - "article": "el", "la", "los" or "las" for a noun. Leave it out entirely for anything that is not a noun: an adjective like "valiente" or a verb like "saltar" does not take one.
-- "en": the English meaning, equally short (e.g. "the moon").
+- "en": the English meaning, equally short (e.g. "the moon"), in English an American 8-year-old already uses. It is read out as a clue and asked on the board as "How do you say ... in Spanish?", so a child who cannot picture the English is stuck before the Spanish starts. Where the dictionary English is a word a child doesn't use, say what the thing is instead: "the stand for sheet music", not "the lectern".
 - "sentence": one simple Spanish sentence with the word replaced by ___ (three underscores). The rest of the sentence must make the missing word unambiguous.
 - "sentenceEn": the English translation of that sentence, keeping the ___ in the same place.
 - "definition": a short Spanish description of the word, written to the rules above, that never contains the word itself.
@@ -50,7 +50,8 @@ const ITEM_RULES = `For each one provide:
 
 Hard rules:
 - The Spanish must not be identical to the English. The point is translation practice, so a character or place name spelled the same in both languages ("Mario", "Bowser") is not vocabulary and must not be used. Names only count if the Spanish genuinely differs.
-- Prefer everyday nouns, verbs and adjectives a child could reuse outside this topic.
+- Prefer everyday nouns, verbs and adjectives a child could reuse outside this topic. Where a general word and a specific one both fit, choose the general one: "flor", not "girasol"; "árbol", not "roble" — unless the specific thing IS the topic. The detail belongs in the clue, where it teaches, not in the word, where it only makes the word rarer.
+- A word that exists only inside the topic's culture — a dish, a decoration, a custom — earns its square only when it is one of the handful a teacher would expect on this topic's word list: "las posadas" and "la rosca de reyes" for a Mexican Christmas, yes; "el aguinaldo", which few teachers teach, no. Keep those to a few per bank, so the bank still teaches everyday Spanish, and remember the child has no background in the culture: the English and both clues have to explain the thing, not assume it.
 - Every face must be different. No two entries may be the same word.
 - No two entries may share a sentence or a definition. Each clue must point at exactly one face, or the game breaks: a child holding a card would have two right answers and no way to choose.
 - The gap holds the bare word, so write the sentence as ordinary Spanish and let it supply its own articles: "La ___ le da sabor a la salsa" becomes "La cebolla le da sabor", and "Un hombre ___ no tiene miedo" becomes "Un hombre valiente no tiene miedo". Make the sentence agree with the word in gender and number.
@@ -124,7 +125,10 @@ const VOCABULARIO_CLUE_RULES = `- A clue must be EASIER than its answer. Apart f
 - THE SWAP TEST, on every clue before you keep it: put the OTHER words of this pack into it, one at a time. If a second one still makes sense, the clue is not finished — rewrite it, do not move on. A clue must rest on something true of the answer ALONE: what it is made of, what it does that nothing else on the list does, who it is to you. A scene the answer merely appears in is not enough, because everything else in the pack appears in that scene too.
   Too vague: "Mi ___ usa la herramienta en el taller los sábados." (the father fits — so does the uncle, the neighbour, the brother)
   Better: "El hermano de mi mamá es mi ___ y viene a comer los domingos."
-  This bites hardest where the pack holds a family of similar words — people, places, foods — that share one scene. There, name the relation or the property, never the scene.`;
+  This bites hardest where the pack holds a family of similar words — people, places, foods — that share one scene. There, name the relation or the property, never the scene.
+- EXPLAIN A CULTURE WORD; DO NOT ASSUME IT. The children have never seen this topic's customs, foods or places outside this lesson. A clue that only works for someone who already knows the thing does not work: say what it is — its shape, what it is made of, what it is for — in easy words.
+  Assumes it: "Hay una ___ blanca y dulce con el nombre en la frente." (la calavera de azúcar)
+  Explains it: "Es un dulce blanco con forma de cabeza de esqueleto."`;
 
 /* True of every type: a category is a theme, never a kind of question.
  *
@@ -221,6 +225,11 @@ const VOCABULARIO = {
 
   // Nothing to check: a word is not derived from anything.
   formAudit: false,
+  // Whether each WORD is worth its square and its English is one a child can
+  // picture — see buildWordAuditPrompt. Only a bank of words has a choice of
+  // word to question: a form is dictated by its formula, a function word by
+  // its job, and a sentence deck's faces are judged by its own doc.
+  wordAudit: true,
 
   /* Which fields the bank editor in step 2 puts on screen.
    *
@@ -336,7 +345,7 @@ const FORMA_ITEM_SHAPE = '{"face": "hablé", "prompt": "yo + hablar (pretérito)
  */
 const FORMA_LADDER = [
   { text: 'the FORMULA: give the person, the dictionary word and the tense, and ask for the form — "yo + hablar, pretérito". The easiest rung: the verb and the person are both handed over, so only the ending is left.', form: 'formula', audio: false, audited: false },
-  { text: 'the ENGLISH of the form — "we were eating" — and ask for the Spanish. Harder than the formula, because the child has to choose the verb as well as inflect it.', form: 'english', audio: false },
+  { text: 'the ENGLISH of the form — "we were eating" — and ask for the Spanish. Harder than the formula, because the child has to choose the verb as well as inflect it. English "you" does not say which Spanish person it is, so when the form is tú, usted or ustedes, name the person in brackets after the quote — «you drink» (tú), «you all eat» (ustedes) — and in promptEn as well: "you drink (informal)". A label, never a scene: «you drink», hablando con un amigo reads as part of a story, not as which "you" is meant.', form: 'english', audio: false },
   { text: 'a Spanish sentence with the form replaced by ___ (three underscores), whose subject and time marker leave exactly one form of this bank that fits.', form: 'gap', audio: false },
   { text: 'a TRANSFORMATION, written as a plain instruction a child can read: "Cambia «hablamos» a la forma de «yo»." or "Escribe «vamos» en subjuntivo." Give one form of a word and ask for another. The form you SHOW and the form you ASK FOR must be different strings. Take the one you show from a DIFFERENT person or tense of the same verb — and note that when the column itself is a person, that means reaching OUTSIDE this column for it, because everything inside the column is already in the person you are asking for. "Cambia «tenga» a la forma de «yo»" answered "tenga" is not a question; "Cambia «tengas» a la forma de «yo»" answered "tenga" is. Name ONLY what changes, and BOTH forms must be on the list: the one you show and the one you are asking for.', form: 'transformation', audio: false, audited: false },
   { text: 'a Spanish sentence with the form replaced by ___, meant to be HEARD and never shown. The hardest rung: the subject and the time marker are the only things that narrow it, and both go past in one hearing.', form: 'gap', audio: true },
@@ -436,6 +445,7 @@ Name the structure each form belongs to in its "prompt", so the board can group 
   // A form IS derived — from a word, a person and a tense — so it can be wrong
   // in a way no string check sees. See buildFormAuditPrompt.
   formAudit: true,
+  wordAudit: false,
 
   // No article on a verb form, no definition of one — and the formula is this
   // deck's cheapest clue, so it needs a box of its own.
@@ -642,6 +652,7 @@ The quiz game gives children no list at all, so a clue whose alternatives are on
 
   // Nothing is derived, so there is no formula to check a face against.
   formAudit: false,
+  wordAudit: false,
 
   // No article, no formula; the definition stays, saying what the word does.
   editorFields: { article: false, formula: false, definition: true },
@@ -857,6 +868,7 @@ const FRASE = {
   // is a different shape entirely, so this one is written in two steps.
   quizFromTopic: false,
   formAudit: false,
+  wordAudit: false,
 
   // Nothing beside the sentence and its English.
   editorFields: { article: false, formula: false, definition: false },
@@ -970,11 +982,21 @@ function listLabel(id) {
   return LIST_LABELS[id] || LIST_DEFAULT;
 }
 
-function deckType(id) {
+const { DECK_LEVELS } = require('./tptVocab');
+
+/* The pack's level rides on a copy of the type, so every prompt builder that
+ * already takes a type can pitch its audience by it (learnerAudience in
+ * prompts.js) without a new argument on each one. Only the grammar types have
+ * levels; anything else, or a level that isn't one, returns the type as is. */
+function deckType(id, level) {
   if (!id) return VOCABULARIO;
   const type = DECK_TYPES[id];
   if (!type) {
     throw new Error(`unknown deck type "${id}"; known types: ${Object.keys(DECK_TYPES).join(', ')}`);
+  }
+  const lvl = String(level || '').trim();
+  if ((id === 'forma' || id === 'palabra') && DECK_LEVELS.includes(lvl)) {
+    return { ...type, level: lvl };
   }
   return type;
 }
