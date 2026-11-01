@@ -4,6 +4,8 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Api\InternalPinAssetController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\CreditsController;
+use App\Http\Controllers\FeedbackController;
+use App\Http\Controllers\GameEventController;
 use App\Http\Controllers\PaddleWebhookController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\TeacherGameController;
@@ -59,11 +61,34 @@ Route::get('/j/{code}', [RoomController::class, 'show'])
 Route::post('/api/internal/room', [RoomController::class, 'publish']);
 
 /*
+ * What the game screens report, and what teachers tell us. Per address, and a
+ * whole school can share one, so the event limit is well above what a building
+ * of classes sends; the feedback limit is only there to stop floods.
+ */
+Route::post('/api/game-events', [GameEventController::class, 'store'])
+    ->middleware('throttle:240,1');
+Route::post('/api/feedback', [FeedbackController::class, 'game'])
+    ->middleware('throttle:30,10');
+
+/*
+ * The links in the how-did-it-go email and on My games. Signed rather than
+ * behind a login: a teacher should not have to sign in to answer one question.
+ */
+Route::middleware('signed')->group(function () {
+    Route::get('/feedback/{user}', [FeedbackController::class, 'show'])->name('feedback.show');
+    Route::post('/feedback/{user}', [FeedbackController::class, 'store'])
+        ->middleware('throttle:30,10')->name('feedback.store');
+});
+
+/*
  * The shop's back office. One gate, on the whole group: nothing under /admin
  * is reachable without it (config/site.php names who has it).
  */
 Route::middleware(['auth', 'verified', 'can:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminController::class, 'index'])->name('index');
+    Route::get('/insights', [AdminController::class, 'insights'])->name('insights');
+    Route::get('/messages', [AdminController::class, 'messages'])->name('messages');
+    Route::get('/logs', [AdminController::class, 'logs'])->name('logs');
     Route::get('/teachers/{user}', [AdminController::class, 'teacher'])->name('teacher');
     Route::post('/teachers/{user}/credits', [AdminController::class, 'credits'])->name('credits');
     Route::post('/purchases/{entry}/refund', [AdminController::class, 'refund'])->name('refund');

@@ -63,7 +63,7 @@ return [
     /* Shown on the legal pages. Bumped by hand when one of them changes in a
      * way a reader should notice — a date that moves on every deploy tells
      * them nothing. */
-    'legal_updated' => env('LEGAL_UPDATED', '29 September 2026'),
+    'legal_updated' => env('LEGAL_UPDATED', '30 October 2026'),
 
     'legal' => [
         'trading_as' => 'Spanish Class Printables',

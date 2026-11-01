@@ -113,11 +113,11 @@ class TeacherGame extends Model
      */
     /**
      * @param  array<string, mixed>  $flags  What the deck tells the ROOM, as
-     *      opposed to what it tells the writer: whether more than one answer is
-     *      right, and which language the clues are in. The builder stamps these
-     *      on when it publishes; a game made here never passes through that, so
-     *      they have to be written in when it is created or the room plays
-     *      without them.
+     *                                       opposed to what it tells the writer: whether more than one answer is
+     *                                       right, and which language the clues are in. The builder stamps these
+     *                                       on when it publishes; a game made here never passes through that, so
+     *                                       they have to be written in when it is created or the room plays
+     *                                       without them.
      */
     public static function blank(
         string $kind,
@@ -205,6 +205,37 @@ class TeacherGame extends Model
 
         $this->forceFill(['written_by' => $writtenBy])->save();
         $this->setData($payload);
+    }
+
+    /**
+     * A short fingerprint of each word and clue, to tell later which ones a
+     * teacher left as AI wrote them.
+     *
+     * Named fields rather than the whole row, because the editor adds and
+     * reorders keys that change nothing a class would see.
+     *
+     * @return list<string>
+     */
+    public function writingPrints(): array
+    {
+        $payload = $this->data();
+
+        $items = array_map(
+            fn (array $item): array => array_map(fn (string $field): string => trim((string) ($item[$field] ?? '')), ['face', 'en', 'sentence', 'definition', 'prompt']),
+            array_filter($payload['items'] ?? [], 'is_array'),
+        );
+
+        $clues = [];
+        foreach ($payload['games']['jeopardy']['categories'] ?? [] as $category) {
+            foreach ($category['clues'] ?? [] as $clue) {
+                $clues[] = [trim((string) ($clue['prompt'] ?? '')), trim((string) ($clue['answer'] ?? ''))];
+            }
+        }
+
+        return array_map(
+            fn (array $fields): string => substr(md5(implode('|', $fields)), 0, 10),
+            [...array_values($items), ...$clues],
+        );
     }
 
     /**

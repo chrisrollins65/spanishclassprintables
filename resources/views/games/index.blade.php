@@ -22,6 +22,10 @@
   .remove:hover { color: #B3261E; }
   @media (max-width: 560px) { .game { flex-direction: column; align-items: flex-start; } }
   .empty { color: var(--muted); }
+  .ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 18px; padding: 12px 16px; background: var(--paper); border: 1px solid var(--edge); border-radius: 14px; }
+  .ask p { font-weight: 700; flex: 1 1 100%; }
+  .ask a { color: var(--ink); text-decoration: none; font-weight: 700; font-size: .95rem; white-space: nowrap; }
+  .ask a:hover { color: var(--accent); }
   .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .head-row .btn { flex: none; }
   .draft-tag { background: var(--gold-soft); color: #7A5200; font-weight: 800; font-size: .72rem; text-transform: uppercase;
@@ -50,6 +54,17 @@
 
     @if (session('status'))
       <p class="notice">{{ session('status') }}</p>
+    @endif
+
+    {{-- Here as well as at the end of the game: this is the first place a
+         teacher lands without a class watching. --}}
+    @if ($askFaces !== [])
+      <div class="ask">
+        <p>How did {{ $askTheme ? '“'.$askTheme.'”' : 'your last game' }} go?</p>
+        @foreach ($askFaces as $face)
+          <a href="{{ $face['url'] }}">{{ $face['face'] }} {{ $face['label'] }}</a>
+        @endforeach
+      </div>
     @endif
 
     <form class="claim" method="post" action="{{ route('my-games.claim') }}" data-once>

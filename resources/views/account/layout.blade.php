@@ -59,6 +59,10 @@
                         background: none; border: 0; cursor: pointer; padding: 0; white-space: nowrap; }
   .nav a:hover, .nav button:hover { color: var(--accent); }
 
+  .admin-bar { border-bottom: 1px solid var(--edge); background: var(--card); }
+  .admin-bar .nav { padding-block: 10px; flex-wrap: wrap; }
+  .admin-bar a[aria-current] { color: var(--accent); }
+
   /* Below this the logo and four or five links stop fitting on one line, and
      the links were being squeezed until the words broke inside themselves.
      The header takes a second row instead: logo above, links centred under
@@ -146,6 +150,19 @@
     </nav>
   </div>
 </header>
+
+@if (request()->routeIs('admin.*'))
+  <div class="admin-bar">
+    <div class="wrap">
+      <nav class="nav" aria-label="Shop">
+        <a href="{{ route('admin.index') }}" @if (request()->routeIs('admin.index', 'admin.teacher')) aria-current="page" @endif>Teachers</a>
+        <a href="{{ route('admin.insights') }}" @if (request()->routeIs('admin.insights')) aria-current="page" @endif>Insights</a>
+        <a href="{{ route('admin.messages') }}" @if (request()->routeIs('admin.messages')) aria-current="page" @endif>Messages</a>
+        <a href="{{ route('admin.logs') }}" @if (request()->routeIs('admin.logs')) aria-current="page" @endif>Logs</a>
+      </nav>
+    </div>
+  </div>
+@endif
 
 <main>
   @yield('content')

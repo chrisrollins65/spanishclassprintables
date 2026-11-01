@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ai\Builder;
 use App\Ai\Writer;
+use App\Models\GameEvent;
 use App\Models\TeacherGame;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -89,6 +90,7 @@ class WriteGame implements ShouldQueue
             }
 
             $game->applyWriting($data, $writtenBy);
+            GameEvent::record('ai_draft_written', $game, ['prints' => $game->writingPrints()]);
 
             // A wholly new game: whatever was asked of AI before was asked of
             // words that no longer exist, so "change it again" would point at

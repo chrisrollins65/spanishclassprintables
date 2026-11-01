@@ -28,6 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
             // Paddle signs the body with its own secret; there is no session
             // and so no token to present.
             'api/paddle/webhook',
+            // The game screens: a room is open to anyone with a code, so there
+            // is no token to send. See GameEventController.
+            'api/game-events',
+            'api/feedback',
         ]);
 
         $middleware->web(append: [ThrottleAccountMail::class]);

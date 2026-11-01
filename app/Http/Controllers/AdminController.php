@@ -5,10 +5,16 @@ namespace App\Http\Controllers;
 use App\Models\CreditEntry;
 use App\Models\TeacherGame;
 use App\Models\User;
+use App\Support\Insights;
+use App\Support\LogReader;
+use App\Support\Messages;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
@@ -40,6 +46,70 @@ class AdminController extends Controller
             ->withQueryString();
 
         return view('admin.index', ['teachers' => $teachers, 'search' => $search]);
+    }
+
+    /** What teachers did with the games, and what they said about them. */
+    public function insights(Request $request): View
+    {
+        $days = (int) $request->query('days');
+        $days = in_array($days, Insights::PERIODS, true) ? $days : Insights::PERIODS[0];
+
+        return view('admin.insights', [
+            'days' => $days,
+            'periods' => Insights::PERIODS,
+            'insights' => new Insights(now()->subDays($days)),
+        ]);
+    }
+
+    /** Everything sent through the site's forms. */
+    public function messages(Request $request): View
+    {
+        $filter = $request->query('show');
+        $filter = in_array($filter, array_keys(Messages::FILTERS), true) ? $filter : array_key_first(Messages::FILTERS);
+
+        return view('admin.messages', [
+            'filter' => $filter,
+            'filters' => Messages::FILTERS,
+            'messages' => (new Messages)->page($filter),
+        ]);
+    }
+
+    /** Laravel's log files, newest first. `show` is a period from LogReader::PERIODS or a file as listed. */
+    public function logs(Request $request, LogReader $logs): View
+    {
+        $data = $request->validate([
+            'show' => ['nullable', 'string', 'max:100'],
+            'level' => ['nullable', Rule::in(array_keys(LogReader::LEVELS))],
+            'q' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $show = $data['show'] ?? (string) array_key_first(LogReader::PERIODS);
+        $level = $data['level'] ?? null;
+        $search = trim($data['q'] ?? '');
+
+        $read = isset(LogReader::PERIODS[$show]) ? $logs->lastDays((int) $show) : $logs->file($show);
+        $matching = $logs->matching($read['entries'], $level, $search);
+        $perPage = 100;
+        $page = Paginator::resolveCurrentPage();
+
+        return view('admin.logs', [
+            'show' => $show,
+            'level' => $level,
+            'search' => $search,
+            'periods' => LogReader::PERIODS,
+            'files' => $logs->files(),
+            'levels' => $logs->levelCounts($read['entries']),
+            'levelLabels' => LogReader::LEVELS,
+            'logged' => count($read['entries']),
+            'truncated' => $read['truncated'],
+            'entries' => (new LengthAwarePaginator(
+                array_slice($matching, ($page - 1) * $perPage, $perPage),
+                count($matching),
+                $perPage,
+                $page,
+                ['path' => $request->url()],
+            ))->withQueryString(),
+        ]);
     }
 
     public function teacher(User $user): View

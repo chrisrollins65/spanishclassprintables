@@ -161,6 +161,7 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
    reaches for it while looking for their own name. */
 .podium-more { margin-top: clamp(0.5rem, 2vh, 1.4rem); text-align: center; flex: none; }
 .caller-more { margin-top: 0.4rem; text-align: center; }
+.check-more { width: 100%; text-align: center; }
 
 /* The two asks, stacked and centred. The gap is small on purpose: they are one
    block addressed to one person, not two competing offers. */
@@ -1724,3 +1725,17 @@ button.team-badge.reroll:hover { filter: brightness(1.15); }
    Quiet and small: it is a note to the teacher standing at the board, not part
    of the answer the class is reading. */
 .answer-note{display:block;margin-top:.4em;font-size:.5em;font-weight:400;opacity:.75;letter-spacing:0}
+
+/* How did it go. Aimed over the class's heads, so it stays small until a
+   teacher taps a face; see feedbackAsk in ui.js. */
+.feedback-ask { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; max-width: 34rem; width: 100%; margin-inline: auto; }
+.feedback-question { margin: 0; color: var(--muted); font-size: clamp(0.8rem, 1.9vh, 1rem); }
+.feedback-faces, .feedback-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.35rem; }
+.feedback-more { display: flex; flex-direction: column; align-items: stretch; gap: 0.6rem; width: 100%; max-width: 34rem; margin-inline: auto; }
+.feedback-ask button[hidden], .feedback-chips[hidden] { display: none; }
+.feedback-more textarea, .feedback-more input[type="email"] { width: 100%; font: inherit; font-size: 1rem; color: inherit; background: var(--cell); border: 2px solid var(--edge); border-radius: 10px; padding: 0.5em 0.7em; }
+.feedback-more [hidden] { display: none; }
+.feedback-more .ghost { align-self: center; }
+.feedback-more textarea { max-height: 40vh; }
+.feedback-trap { position: absolute; left: -9999px; width: 1px; height: 1px; }
+.feedback-panel { justify-content: center; }

@@ -50,8 +50,9 @@ const ROOM_PAGE = /^\/j(\/[A-Za-z0-9]{4,8})?\/?$/;
 const PAYLOAD = /^\/j\/rooms\/[A-Za-z0-9]{4,8}\.json$/;
 const ASSET = /^\/game\/[\w.-]+\.(?:js|css)$/;
 
-// Safe to take over at once: a running game makes no requests after its payload
-// has loaded, so there is nothing in flight for a new worker to disturb.
+// Safe to take over at once: nothing a running game asks for passes through
+// here after its payload has loaded (the reports it sends are POSTs, which this
+// leaves alone), so there is nothing in flight for a new worker to disturb.
 self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', event => {

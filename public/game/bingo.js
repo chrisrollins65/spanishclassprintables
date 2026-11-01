@@ -99,6 +99,11 @@
     try { localStorage.removeItem(storageKey()); } catch {}
   }
 
+  function noteFeedbackRated() {
+    state.feedbackRated = true;
+    save();
+  }
+
   /* ---------- entry ---------- */
 
   function mount(container, payload) {
@@ -118,8 +123,12 @@
         save();
       }
     }
-    if (state && state.calls) renderCaller();
-    else renderSetup();
+    if (state && state.calls) {
+      window.RoomAnalytics.track('game_resumed');
+      renderCaller();
+    } else {
+      renderSetup();
+    }
   }
 
   function title() {
@@ -227,8 +236,9 @@
 
     const start = el('button', 'primary', '¡Empezar!');
     start.onclick = () => {
-      state = { mode, pattern, rate: DEFAULT_RATE, mix: [...mix], calls: [], order: shuffledOrder() };
+      state = { mode, pattern, rate: DEFAULT_RATE, mix: [...mix], calls: [], order: shuffledOrder(), startedAt: Date.now() };
       save();
+      window.RoomAnalytics.track('game_started', { mode, pattern });
       fx.play('start');
       renderCaller();
     };
@@ -243,6 +253,9 @@
     if (customize) wrap.append(customize);
     const back = window.RoomUI.backToMyGames(room);
     if (back) wrap.append(back);
+    wrap.append(window.RoomUI.feedbackLink(root, room));
+    const owed = window.RoomUI.feedbackOwed(room);
+    if (owed) wrap.append(owed);
     root.append(wrap);
   }
 
@@ -477,7 +490,12 @@
       // podium here — so it is the one place in the caller that may ask the
       // teacher for anything. Nothing is drawn beside it while words remain.
       bar.append(el('p', 'hint', 'Se acabaron las palabras.'),
-        el('div', 'caller-more', null, [afterGame(room)]));
+        el('div', 'caller-more', null, [afterGame(room, state.feedbackRated, noteFeedbackRated)]));
+    } else if (!state.calls.length || state.finishReported) {
+      // A game left on the screen from another day: the first thing a teacher
+      // sees coming back to it. Gone with the next word called.
+      const owed = window.RoomUI.feedbackOwed(room);
+      if (owed) bar.append(el('div', 'caller-more', null, [owed]));
     }
     return bar;
   }
@@ -515,7 +533,23 @@
     if (next == null) return;
     state.calls.push({ i: next, mode: pickMode() });
     save();
+    if (state.calls.length >= game.items.length) reportFinished('deck');
     renderCaller(true);
+  }
+
+  /* A bingo has no last square, so the game counts as played at its first good
+   * card, or when the deck runs out without one. Once per game: the flag is on
+   * the saved game, and a class plays on to a second and third winner. */
+  function reportFinished(how) {
+    if (state.finishReported) return;
+    state.finishReported = true;
+    save();
+    window.RoomAnalytics.track('game_finished', {
+      how,
+      calls: state.calls.length,
+      duration: state.startedAt ? Math.round((Date.now() - state.startedAt) / 1000) : undefined,
+    });
+    window.RoomUI.noteFeedbackOwed(room);
   }
 
   function pickMode() {
@@ -606,8 +640,14 @@
         return;
       }
       const size = card.grid.length;
+      const box = verdict(card);
       result.append(el('p', 'rate-label', `Cartón ${card.id} · ${size}×${size}`),
-        verdict(card), cardGrid(card));
+        box, cardGrid(card));
+      // Under the card, because the class is still looking at it.
+      const ask = box.classList.contains('win')
+        ? window.RoomUI.feedbackForGame(room, state.feedbackRated, noteFeedbackRated)
+        : null;
+      if (ask) result.append(el('div', 'check-more', null, [ask]));
     };
     input.onkeydown = e => { if (e.key === 'Enter') go.click(); };
 
@@ -634,6 +674,8 @@
 
     const box = el('div', win ? 'verdict win' : 'verdict lose');
     box.textContent = win ? '¡BINGO VÁLIDO!' : 'TODAVÍA NO';
+    window.RoomAnalytics.track('bingo_checked', { valid: win });
+    if (win) reportFinished('card');
     if (win) {
       fx.play('fanfare');
       fx.confetti();

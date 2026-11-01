@@ -17,6 +17,15 @@
     bingo: { label: 'Bingo', mount: (root, room) => window.Bingo.mount(root, room) },
   };
 
+  function play(key, room) {
+    window.RoomAnalytics.enterGame(key);
+    MODES[key].mount(app, room);
+  }
+
+  /* How long the voice list may take to arrive before "no Spanish voice" is
+   * true rather than "not yet known" (see canSpeakSpanish in ui.js). */
+  const VOICE_CHECK_MS = 3000;
+
   const app = document.getElementById('app');
 
   function codeFromUrl() {
@@ -43,6 +52,7 @@
     try {
       const res = await fetch(payloadUrl);
       if (res.status === 404) {
+        window.RoomAnalytics.track('code_not_found', { code });
         return renderCodeEntry(`No encontramos la sala "${code}". Revisa el código de tu hoja.`);
       }
       if (!res.ok) throw new Error(String(res.status));
@@ -71,13 +81,19 @@
     // Made here with a credit rather than bought on TpT, which is the one
     // thing the end-of-game screen needs to know: see afterGame.
     room.madeHere = app.dataset.madeHere === '1';
+    room.gameId = payloadUrl.match(/my-games\/([^/]+)\//)[1];
     mountRoom(room);
   }
 
   function mountRoom(room) {
     const available = Object.keys(room.games || {}).filter(k => MODES[k]);
     if (!available.length) return renderCodeEntry('Esta sala no tiene juegos todavía.');
-    if (available.length === 1) return MODES[available[0]].mount(app, room);
+    window.RoomAnalytics.enterRoom(room);
+    window.RoomAnalytics.track('room_opened');
+    setTimeout(() => {
+      if (!window.RoomUI.canSpeakSpanish()) window.RoomAnalytics.track('no_spanish_voice');
+    }, VOICE_CHECK_MS);
+    if (available.length === 1) return play(available[0], room);
     renderModePicker(room, available);
   }
 
@@ -173,7 +189,7 @@
       const btn = document.createElement('button');
       btn.className = 'primary';
       btn.textContent = MODES[key].label;
-      btn.onclick = () => MODES[key].mount(app, room);
+      btn.onclick = () => play(key, room);
       wrap.append(btn);
     });
 

@@ -84,6 +84,79 @@ class TeacherAccountTest extends TestCase
         $this->assertNotNull($user->fresh()->email_verified_at);
     }
 
+    public function test_a_new_teacher_who_once_tried_the_admin_pages_is_not_sent_there(): void
+    {
+        config(['site.admins' => ['shop@example.com']]);
+        $this->get('/admin')->assertRedirect('/login');
+
+        $this->post('/register', [
+            'name' => 'New Teacher',
+            'email' => 'new@example.com',
+            'password' => 'a long enough password',
+            'password_confirmation' => 'a long enough password',
+            'terms' => '1',
+        ])->assertRedirect('/my-games');
+
+        $user = User::where('email', 'new@example.com')->sole();
+        $link = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
+            'id' => $user->id,
+            'hash' => sha1($user->email),
+        ]);
+
+        $this->get('/my-games')->assertRedirect('/email/verify');
+        $this->get($link)->assertRedirect('/my-games');
+        $this->assertNotNull($user->fresh()->email_verified_at);
+    }
+
+    public function test_confirming_an_address_forgets_an_admin_page_left_in_the_session(): void
+    {
+        config(['site.admins' => ['shop@example.com']]);
+        $user = User::factory()->unverified()->create();
+
+        $link = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
+            'id' => $user->id,
+            'hash' => sha1($user->email),
+        ]);
+
+        $this->actingAs($user)->get('/admin')->assertRedirect('/email/verify');
+        $this->get($link)->assertRedirect('/my-games?verified=1');
+    }
+
+    public function test_a_teacher_logging_in_is_not_sent_to_the_admin_pages(): void
+    {
+        config(['site.admins' => ['shop@example.com']]);
+        $user = User::factory()->create(['password' => 'the right password']);
+
+        $this->get('/admin')->assertRedirect('/login');
+
+        $this->post('/login', ['email' => $user->email, 'password' => 'the right password'])
+            ->assertRedirect('/my-games');
+    }
+
+    public function test_an_admin_logging_in_still_goes_back_to_the_admin_pages(): void
+    {
+        config(['site.admins' => ['shop@example.com']]);
+        $admin = User::factory()->create(['email' => 'shop@example.com', 'password' => 'the right password']);
+
+        $this->get('/admin/insights')->assertRedirect('/login');
+
+        $this->post('/login', ['email' => $admin->email, 'password' => 'the right password'])
+            ->assertRedirect('/admin/insights');
+    }
+
+    public function test_a_buyer_signing_up_still_comes_back_to_the_game_they_were_customizing(): void
+    {
+        $user = User::factory()->unverified()->create();
+
+        $link = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
+            'id' => $user->id,
+            'hash' => sha1($user->email),
+        ]);
+
+        $this->actingAs($user)->get('/my-games?code=ABCD')->assertRedirect('/email/verify');
+        $this->get($link)->assertRedirect('/my-games?code=ABCD');
+    }
+
     public function test_logging_in_and_out(): void
     {
         $user = User::factory()->create(['password' => 'the right password']);

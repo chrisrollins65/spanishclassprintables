@@ -36,6 +36,19 @@ class AdminTest extends TestCase
         $this->actingAs($this->admin())->get('/admin')->assertOk();
     }
 
+    public function test_the_admin_bar_is_on_admin_pages_and_marks_where_you_are(): void
+    {
+        $admin = $this->admin();
+
+        $this->actingAs($admin)->get('/admin/messages')
+            ->assertSee('aria-label="Shop"', false)
+            ->assertSee('href="'.route('admin.messages').'"  aria-current="page"', false);
+        $this->actingAs($admin)->get("/admin/teachers/{$admin->id}")
+            ->assertSee('href="'.route('admin.index').'"  aria-current="page"', false);
+
+        $this->actingAs($admin)->get('/account')->assertDontSee('aria-label="Shop"', false);
+    }
+
     public function test_admin_rights_come_from_the_config_not_the_row(): void
     {
         // Nothing a teacher can write to their own row can promote them.

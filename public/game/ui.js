@@ -910,7 +910,10 @@
     // Hidden rather than greyed: an older room published without its word list
     // would otherwise open every lesson on a button that does nothing.
     btn.hidden = !items || !items.length;
-    btn.onclick = () => openVocab(container, items, { moment: 'review', type });
+    btn.onclick = () => {
+      window.RoomAnalytics.track('vocab_reviewed');
+      openVocab(container, items, { moment: 'review', type });
+    };
     return btn;
   }
 
@@ -937,6 +940,7 @@
    * without numbers a reader goes across the rows instead.
    */
   function openHowTo(container, steps) {
+    window.RoomAnalytics.track('how_to_opened');
     const screen = el('section', 'clue-screen howto-screen');
     let showing = true;
 
@@ -1079,6 +1083,259 @@
     return link;
   }
 
+  /* Asking the teacher how it went, for ourselves rather than for TpT.
+   *
+   * It sits below the review ask and never replaces it: a teacher is offered
+   * the review whatever they say here, because showing it only to the happy
+   * ones would be gaming the reviews, and a buyer can tell.
+   *
+   * A tap on a face is saved at once, so a teacher who has a class to get back
+   * to has still answered. The chips and the box are a panel of their own
+   * behind "Add a comment": the room is still looking at the standings, and a
+   * form opened under the podium squeezes it until the steps are cut off.
+   * The panel leads with the question that fits the face, what worked after
+   * "Loved it" and what got in the way after the other two. The opposite one is
+   * a tap away rather than on show, so the panel still looks like one question.
+   *
+   * RATINGS, ISSUES and HIGHLIGHTS match Feedback.php.
+   */
+  const FEEDBACK_RATINGS = [
+    { value: 3, face: '😀', label: 'Loved it' },
+    { value: 2, face: '😐', label: 'It was OK' },
+    { value: 1, face: '😕', label: 'Had problems' },
+  ];
+  const FEEDBACK_ISSUES = {
+    setup: 'Setup was confusing',
+    audio: 'Audio didn’t work',
+    hard: 'Too hard for my class',
+    easy: 'Too easy for my class',
+    long: 'Took too long',
+    broke: 'Something broke',
+  };
+  const FEEDBACK_HIGHLIGHTS = {
+    engaged: 'Students were engaged',
+    setup: 'Easy to set up',
+    practice: 'Good practice',
+    level: 'Right level for my class',
+    time: 'Saved me time',
+  };
+
+  /* The next-visit question goes up not more than once a month on a device,
+   * because it is the first thing a teacher sees: this is the only limit on it.
+   * Set by its being shown or by a sent form, never by a tap on a face, which
+   * leaves a teacher who was too busy for more free to be asked later.
+   * A date and nothing else: there is nothing in it to know a teacher by. */
+  const ASKED_KEY = 'scp-feedback-asked';
+  const ASK_EVERY_MS = 30 * 24 * 60 * 60 * 1000;
+
+  function askedRecently() {
+    try {
+      return Date.now() - Number(localStorage.getItem(ASKED_KEY) || 0) < ASK_EVERY_MS;
+    } catch { return false; }
+  }
+
+  function markAsked() {
+    try { localStorage.setItem(ASKED_KEY, String(Date.now())); } catch {}
+  }
+
+  function postFeedback(body) {
+    fetch('/api/feedback', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }
+
+  function feedbackAsk(room, source, onRated = () => {}) {
+    if (source !== 'game') markAsked();
+    const wrap = el('div', 'feedback-ask');
+    // The podium behind this is one big "celebrate again" button.
+    wrap.onclick = e => e.stopPropagation();
+    const token = window.RoomAnalytics.uuid();
+    const about = {
+      token, source,
+      game: window.RoomAnalytics.currentGame(),
+      room_code: room.gameId ? null : room.code,
+      own_game: room.gameId || null,
+    };
+    let rating = null;
+
+    const question = el('p', 'feedback-question', 'Teachers: how did it go?');
+    const faces = el('div', 'feedback-faces');
+    const more = el('div', 'feedback-more');
+    const panel = el('section', 'clue-screen');
+    const addComment = el('button', 'ghost small', 'Add a comment');
+    addComment.type = 'button';
+    addComment.hidden = true;
+    addComment.onclick = () => document.getElementById('app').append(panel);
+
+    const issues = new Set();
+    const highlights = new Set();
+    const chipsFor = (options, picked) => {
+      const chips = el('div', 'feedback-chips');
+      Object.entries(options).forEach(([key, label]) => {
+        const chip = el('button', 'choice small', label);
+        chip.type = 'button';
+        chip.onclick = () => {
+          if (picked.has(key)) picked.delete(key);
+          else picked.add(key);
+          chip.classList.toggle('chosen', picked.has(key));
+        };
+        chips.append(chip);
+      });
+      return chips;
+    };
+    const issueChips = chipsFor(FEEDBACK_ISSUES, issues);
+    const highlightChips = chipsFor(FEEDBACK_HIGHLIGHTS, highlights);
+    const chipArea = el('div', 'feedback-more');
+    const mainQuestion = el('p', 'feedback-question');
+    const otherQuestion = el('p', 'feedback-question');
+    const showOther = el('button', 'ghost small');
+    showOther.type = 'button';
+    let otherOpen = false;
+
+    const fitQuestions = () => {
+      const loved = rating === 3;
+      const [main, other] = loved ? [highlightChips, issueChips] : [issueChips, highlightChips];
+      const otherAsks = loved ? 'Anything that could be better?' : 'Anything that worked well?';
+      addComment.textContent = loved ? 'Thanks! Tell us what worked →' : 'Thanks! Add a comment →';
+      mainQuestion.textContent = loved ? 'What worked best?' : 'Did anything get in the way?';
+      otherQuestion.textContent = otherAsks;
+      showOther.textContent = otherAsks;
+      showOther.hidden = otherOpen;
+      otherQuestion.hidden = !otherOpen;
+      main.hidden = false;
+      other.hidden = !otherOpen;
+      chipArea.replaceChildren(mainQuestion, main, showOther, otherQuestion, other);
+    };
+    showOther.onclick = () => {
+      otherOpen = true;
+      fitQuestions();
+    };
+
+    const comment = document.createElement('textarea');
+    comment.maxLength = 2000;
+    comment.rows = 2;
+    comment.placeholder = 'Anything else we should know? (optional)';
+    comment.setAttribute('aria-label', 'Anything else we should know?');
+    comment.oninput = () => {
+      comment.style.height = 'auto';
+      comment.style.height = `${comment.scrollHeight + comment.offsetHeight - comment.clientHeight}px`;
+    };
+
+    const buttons = FEEDBACK_RATINGS.map(option => {
+      const btn = el('button', 'choice small', `${option.face} ${option.label}`);
+      btn.type = 'button';
+      btn.onclick = () => {
+        rating = option.value;
+        onRated();
+        buttons.forEach(b => b.classList.toggle('chosen', b === btn));
+        postFeedback({ ...about, rating });
+        fitQuestions();
+        addComment.hidden = false;
+      };
+      faces.append(btn);
+      return btn;
+    });
+
+    const email = document.createElement('input');
+    email.type = 'email';
+    email.placeholder = 'Your email, if you’d like a reply (optional)';
+    email.setAttribute('aria-label', 'Your email, if you would like a reply');
+    email.hidden = !!room.gameId;
+
+    // A field no person can see, as on the contact form.
+    const honeypot = document.createElement('input');
+    honeypot.className = 'feedback-trap';
+    honeypot.tabIndex = -1;
+    honeypot.autocomplete = 'off';
+    honeypot.setAttribute('aria-hidden', 'true');
+
+    const send = el('button', 'primary', 'Send');
+    send.type = 'button';
+    send.onclick = () => {
+      send.disabled = true;
+      markAsked();
+      postFeedback({
+        ...about, rating,
+        issues: [...issues],
+        highlights: [...highlights],
+        comment: comment.value.trim() || null,
+        email: email.value.trim() || null,
+        website: honeypot.value,
+      });
+      panel.remove();
+      wrap.replaceChildren(el('p', 'feedback-question', 'Thank you. That really helps.'));
+    };
+
+    const close = el('button', 'ghost', 'Volver');
+    close.onclick = () => panel.remove();
+
+    more.append(chipArea, comment, email, honeypot, send);
+    panel.append(el('div', 'clue-body feedback-panel', null, [more]), el('div', 'clue-controls', null, [close]));
+    wrap.append(question, faces, addComment);
+    return wrap;
+  }
+
+  /* The way to say something without waiting to be asked. Setup screens only,
+   * beside moreGames, and in a panel of its own so it survives nothing having
+   * finished yet. */
+  function feedbackLink(container, room) {
+    const link = el('a', 'more-games', 'Tell us what you think');
+    link.href = '#';
+    link.onclick = e => {
+      e.preventDefault();
+      const screen = el('section', 'clue-screen');
+      const close = el('button', 'ghost', 'Volver');
+      close.onclick = () => screen.remove();
+      screen.append(el('div', 'clue-body feedback-panel', null, [feedbackAsk(room, 'anytime')]),
+        el('div', 'clue-controls', null, [close]));
+      container.append(screen);
+    };
+    return link;
+  }
+
+  /* The next-visit question, for a game that ended with nothing to end on.
+   *
+   * A bingo stops at the first good card, usually with words still to call and
+   * the class still watching, so all it can ask then is the one quiet line of
+   * feedbackForGame. This remembers that a game finished, and the question goes up
+   * the next time the teacher opens the room, once a lesson's worth of time has
+   * gone by.
+   */
+  const OWED_MS = 60 * 60 * 1000;
+
+  function owedKey(room) {
+    return `scp-feedback-owed-${room.code}`;
+  }
+
+  function noteFeedbackOwed(room) {
+    try { localStorage.setItem(owedKey(room), String(Date.now())); } catch {}
+  }
+
+  // Returned once: it is taken off the list as it goes up, so the next word
+  // called clears it from the screen for good.
+  function feedbackOwed(room) {
+    try {
+      const since = Number(localStorage.getItem(owedKey(room)) || 0);
+      if (!since || Date.now() - since < OWED_MS) return null;
+      localStorage.removeItem(owedKey(room));
+    } catch { return null; }
+    return askedRecently() ? null : feedbackAsk(room, 'next_visit');
+  }
+
+  /* The question inside a game: under a good bingo card, and on the screen a
+   * game ends on. These are the moments a teacher who never reopens the room is
+   * sure to reach, and they ask for nothing but an optional tap, so there is no
+   * monthly limit: every game asks, again on each good card until a face is
+   * tapped. The game itself remembers the tap, on its saved state, which is what
+   * keeps a second winner from making a second answer about the same game.
+   */
+  function feedbackForGame(room, rated, onRated) {
+    return rated ? null : feedbackAsk(room, 'game', onRated);
+  }
+
   /* Where a buyer leaves feedback: every purchase on one page, each with its own
    * Provide Feedback button, and the sign-in sends them straight back to it.
    *
@@ -1106,7 +1363,7 @@
    * ask would be for a review of their own work. A game they CLAIMED from a
    * pack keeps the ask: that one really was bought.
    */
-  function afterGame(room) {
+  function afterGame(room, rated, onRated) {
     const wrap = el('div', 'after-game');
     if (!(room && (room.demo || room.madeHere))) {
       const ask = el('a', 'review-cta');
@@ -1122,6 +1379,8 @@
       );
       wrap.append(ask);
     }
+    const feedback = feedbackForGame(room, rated, onRated);
+    if (feedback) wrap.append(feedback);
     wrap.append(moreGames());
     const back = backToMyGames(room);
     if (back) wrap.append(back);
@@ -1134,6 +1393,7 @@
     hasSpeech, spanishVoice, canSpeakSpanish, primeVoices, speak, englishToggle,
     displayFace, openVocab, listLabel, reviewButton, openHowTo, howToButton,
     brandMark, moreGames, customizeGame, backToMyGames, afterGame, MORE_GAMES_URL,
+    feedbackLink, feedbackOwed, noteFeedbackOwed, feedbackForGame,
     DEFAULT_RATE, RATES, normalizeRate, rateRow,
   };
 })();

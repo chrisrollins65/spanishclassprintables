@@ -9,6 +9,8 @@ use App\Jobs\RenderAnswerSheet;
 use App\Jobs\RenderBingoCards;
 use App\Jobs\WriteGame;
 use App\Models\CreditUnit;
+use App\Models\Feedback;
+use App\Models\GameEvent;
 use App\Models\Room;
 use App\Models\TeacherGame;
 use App\Models\User;
@@ -19,6 +21,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -57,8 +60,18 @@ class TeacherGameController extends Controller
             ->latest('updated_at')
             ->get();
 
+        $play = $request->user()->playToAskAbout();
+
         return view('games.index', [
             'games' => $games,
+            // Signed like the email's links, so both land on the same page.
+            'askFaces' => $play === null ? [] : array_map(
+                fn (int $rating): array => Feedback::RATINGS[$rating] + ['url' => URL::signedRoute('feedback.show', [
+                    'user' => $request->user(), 'about' => $play->id, 'rating' => $rating, 'from' => 'my_games',
+                ])],
+                array_keys(Feedback::RATINGS),
+            ),
+            'askTheme' => $play?->theme(),
             'credits' => $request->user()->availableCredits(),
             'held' => $request->user()->heldCredits(),
         ]);
@@ -483,6 +496,7 @@ class TeacherGameController extends Controller
 
         EditGame::markWorking($game->id);
         EditGame::dispatch($game->id, trim($data['request']));
+        GameEvent::record('ai_edit_requested', $game, ['request' => Str::limit(trim($data['request']), 200)]);
 
         return response()->json(['status' => 'working'], 202);
     }
@@ -542,9 +556,34 @@ class TeacherGameController extends Controller
         }
 
         $game->publish();
+        $this->noteWhatAiKept($game);
 
         return redirect()->route('my-games')
             ->with('status', "\"{$game->theme}\" is ready to play.");
+    }
+
+    /**
+     * How much of what AI wrote survived to publishing.
+     *
+     * The cheapest honest measure of the writing there is: a teacher who
+     * rewrites half of a draft has told us more than any rating would.
+     */
+    private function noteWhatAiKept(TeacherGame $game): void
+    {
+        $written = GameEvent::where('teacher_game_id', $game->id)
+            ->where('event', 'ai_draft_written')
+            ->latest('id')
+            ->first();
+
+        $prints = $written->data['prints'] ?? [];
+        if ($prints === []) {
+            return;
+        }
+
+        GameEvent::record('ai_draft_published', $game, [
+            'written' => count($prints),
+            'kept' => count(array_intersect($prints, $game->writingPrints())),
+        ]);
     }
 
     /** A game of this teacher's that is still a draft. */
@@ -707,6 +746,8 @@ class TeacherGameController extends Controller
             return response()->json(['message' => 'This game has no cards that size.'], 422);
         }
 
+        GameEvent::record('printables_requested', $game, ['kind' => 'cards', 'size' => $size]);
+
         if (Storage::disk('local')->exists(RenderBingoCards::pathFor($game->id, $size, $stamp))) {
             return response()->json(['status' => 'ready', 'url' => route('my-games.cards.download', [$game, $size])]);
         }
@@ -744,6 +785,8 @@ class TeacherGameController extends Controller
         if ($stamp === null) {
             return response()->json(['message' => 'This game has no board to make a sheet from.'], 422);
         }
+
+        GameEvent::record('printables_requested', $game, ['kind' => 'answer_sheet']);
 
         if (Storage::disk('local')->exists(RenderAnswerSheet::pathFor($game->id, $stamp))) {
             return response()->json(['status' => 'ready', 'url' => route('my-games.answer-sheet.download', $game)]);

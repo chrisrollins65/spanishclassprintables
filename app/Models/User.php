@@ -22,6 +22,12 @@ class User extends Authenticatable implements MustVerifyEmail
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
+    /** How long after a game My games keeps asking about it. */
+    private const FEEDBACK_ASK_DAYS = 14;
+
+    /** How long an answer buys a teacher a rest from being asked. */
+    private const FEEDBACK_COOLDOWN_DAYS = 30;
+
     /**
      * Get the attributes that should be cast.
      *
@@ -31,11 +37,43 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             'email_verified_at' => 'datetime',
+            'feedback_asked_at' => 'datetime',
             'password' => 'hashed',
         ];
     }
 
     /** @return HasMany<TeacherGame, $this> */
+    /** @return HasMany<GameEvent, $this> */
+    public function gameEvents(): HasMany
+    {
+        return $this->hasMany(GameEvent::class);
+    }
+
+    /** @return HasMany<Feedback, $this> */
+    public function feedback(): HasMany
+    {
+        return $this->hasMany(Feedback::class);
+    }
+
+    /**
+     * The recent game worth asking this teacher about on My games, if any.
+     *
+     * Never while it may still be going on, and not for a teacher who told us
+     * something in the last month: they have done their bit.
+     */
+    public function playToAskAbout(): ?GameEvent
+    {
+        if ($this->feedback()->where('created_at', '>=', now()->subDays(self::FEEDBACK_COOLDOWN_DAYS))->exists()) {
+            return null;
+        }
+
+        return $this->gameEvents()
+            ->where('event', 'game_finished')
+            ->whereBetween('created_at', [now()->subDays(self::FEEDBACK_ASK_DAYS), now()->subHour()])
+            ->latest('id')
+            ->first();
+    }
+
     public function teacherGames(): HasMany
     {
         return $this->hasMany(TeacherGame::class);

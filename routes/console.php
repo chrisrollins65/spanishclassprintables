@@ -21,6 +21,17 @@ Schedule::command('paddle:sync')
     ->runInBackground();
 
 /*
+ * The one email asking a teacher how their first game went. Hourly so it lands
+ * about a day after the game rather than all at once.
+ */
+Schedule::command('feedback:ask')
+    ->hourly()
+    ->withoutOverlapping();
+
+// Event rows and feedback go when the privacy policy says they go.
+Schedule::command('model:prune')->dailyAt('02:30');
+
+/*
  * Nightly backup to Google Drive. The database holds everything a buyer paid
  * for — their credits, the games they edited themselves, and the rooms every
  * printed QR code points at. A room that cannot be restored is a dead QR on a

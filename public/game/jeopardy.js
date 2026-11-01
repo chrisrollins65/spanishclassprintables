@@ -1,8 +1,9 @@
 /* Team quiz board, projected at the front of the room.
  *
- * The whole game lives on one screen for one class period, so there is no
- * server in this file and no network call after the payload loads: state is a
- * plain object mirrored into localStorage, keyed by room code. That mirror is
+ * The whole game lives on one screen for one class period, so nothing in this
+ * file waits on a server after the payload loads (analytics.js reports on the
+ * side, and never holds anything up): state is a plain object mirrored into
+ * localStorage, keyed by room code. That mirror is
  * not a nicety — a teacher who bumps F5 forty minutes into a period with live
  * scores on the board has lost the lesson, and this is the entire fix.
  *
@@ -192,6 +193,11 @@
     }
   }
 
+  function noteFeedbackRated() {
+    state.feedbackRated = true;
+    save();
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(storageKey());
@@ -219,8 +225,12 @@
         save();
       }
     }
-    if (state && state.teams && state.teams.length) renderBoard();
-    else renderSetup();
+    if (state && state.teams && state.teams.length) {
+      window.RoomAnalytics.track('game_resumed');
+      renderBoard();
+    } else {
+      renderSetup();
+    }
   }
 
   /* ---------- setup ---------- */
@@ -330,8 +340,10 @@
       // On the game, not read back off the preference: a teacher who changes
       // the box for their next class must not change the rules of the game
       // already saved in this room.
-      state = { teams, turn: 0, used: [], daily: pickDailyCell(), rate: DEFAULT_RATE, priced, peeks: {} };
+      state = { teams, turn: 0, used: [], daily: pickDailyCell(), rate: DEFAULT_RATE, priced, peeks: {}, startedAt: Date.now() };
       save();
+      // How many teams, never who: their names may be children's.
+      window.RoomAnalytics.track('game_started', { teams: teams.length, priced });
       fx.play('start');
       renderBoard({ intro: true });
     };
@@ -345,6 +357,7 @@
     if (customize) wrap.append(customize);
     const back = window.RoomUI.backToMyGames(room);
     if (back) wrap.append(back);
+    wrap.append(window.RoomUI.feedbackLink(root, room));
     root.append(wrap);
   }
 
@@ -536,6 +549,7 @@
       if (finalClue() && wagerState().stage !== 'done') return renderWager();
       const reveal = celebrateFinish;
       celebrateFinish = false;
+      reportFinished();
       pendingMoments = [];
       pendingScore = null;
       screen.append(window.RoomUI.topBar(el('div'), game.title || room.theme, controls), podium(reveal));
@@ -580,6 +594,20 @@
     screen.append(board, scoreStrip());
     root.append(screen);
     if (pendingMoments.length) showMoments(screen);
+  }
+
+  /* Once per game, whichever way it ended and however often the podium is
+   * redrawn: the flag is on the saved game, so a reload does not count again. */
+  function reportFinished() {
+    if (state.finishReported) return;
+    state.finishReported = true;
+    save();
+    window.RoomAnalytics.track('game_finished', {
+      teams: state.teams.length,
+      how: 'podium',
+      duration: state.startedAt ? Math.round((Date.now() - state.startedAt) / 1000) : undefined,
+    });
+    window.RoomUI.noteFeedbackOwed(room);
   }
 
   /* The team strictly ahead of everyone, or null for a tie at the top or a
@@ -1120,7 +1148,7 @@
     /* The game is over and the room is still looking at the screen — the one
      * moment in the lesson where asking the teacher for something costs the
      * class nothing. It sits under the standings, never over them. */
-    wrap.append(el('div', 'podium-more', null, [afterGame(room)]));
+    wrap.append(el('div', 'podium-more', null, [afterGame(room, state.feedbackRated, noteFeedbackRated)]));
     return wrap;
   }
 
@@ -1733,6 +1761,13 @@
       fx.play('none');
     }
     noteMoments(teamIndex);
+    // The clue and whether any team got it. Which team is nobody's business.
+    window.RoomAnalytics.track('clue_resolved', {
+      category: game.categories[c].name,
+      clue: clue.prompt,
+      value: clue.value,
+      answered: teamIndex !== null,
+    });
     state.used.push(`${c}-${r}`);
     if (state.used.length === countClues()) celebrateFinish = true;
     // The pick rotates rather than staying with whoever scored: over a period
