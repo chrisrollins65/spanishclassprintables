@@ -193,8 +193,8 @@
     }
   }
 
-  function noteFeedbackRated() {
-    state.feedbackRated = true;
+  function rememberFeedback(answer) {
+    state.feedback = answer;
     save();
   }
 
@@ -1148,7 +1148,7 @@
     /* The game is over and the room is still looking at the screen — the one
      * moment in the lesson where asking the teacher for something costs the
      * class nothing. It sits under the standings, never over them. */
-    wrap.append(el('div', 'podium-more', null, [afterGame(room, state.feedbackRated, noteFeedbackRated)]));
+    wrap.append(el('div', 'podium-more', null, [afterGame(room, state.feedback, rememberFeedback)]));
     return wrap;
   }
 

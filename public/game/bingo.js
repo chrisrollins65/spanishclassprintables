@@ -99,8 +99,8 @@
     try { localStorage.removeItem(storageKey()); } catch {}
   }
 
-  function noteFeedbackRated() {
-    state.feedbackRated = true;
+  function rememberFeedback(answer) {
+    state.feedback = answer;
     save();
   }
 
@@ -490,7 +490,7 @@
       // podium here — so it is the one place in the caller that may ask the
       // teacher for anything. Nothing is drawn beside it while words remain.
       bar.append(el('p', 'hint', 'Se acabaron las palabras.'),
-        el('div', 'caller-more', null, [afterGame(room, state.feedbackRated, noteFeedbackRated)]));
+        el('div', 'caller-more', null, [afterGame(room, state.feedback, rememberFeedback)]));
     } else if (!state.calls.length || state.finishReported) {
       // A game left on the screen from another day: the first thing a teacher
       // sees coming back to it. Gone with the next word called.
@@ -645,7 +645,7 @@
         box, cardGrid(card));
       // Under the card, because the class is still looking at it.
       const ask = box.classList.contains('win')
-        ? window.RoomUI.feedbackForGame(room, state.feedbackRated, noteFeedbackRated)
+        ? window.RoomUI.feedbackForGame(room, state.feedback, rememberFeedback)
         : null;
       if (ask) result.append(el('div', 'check-more', null, [ask]));
     };

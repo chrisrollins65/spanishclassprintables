@@ -1147,19 +1147,19 @@
     }).catch(() => {});
   }
 
-  function feedbackAsk(room, source, onRated = () => {}) {
+  function feedbackAsk(room, source, saved = {}, remember = () => {}) {
     if (source !== 'game') markAsked();
     const wrap = el('div', 'feedback-ask');
     // The podium behind this is one big "celebrate again" button.
     wrap.onclick = e => e.stopPropagation();
-    const token = window.RoomAnalytics.uuid();
+    const token = saved.token || window.RoomAnalytics.uuid();
     const about = {
       token, source,
       game: window.RoomAnalytics.currentGame(),
       room_code: room.gameId ? null : room.code,
       own_game: room.gameId || null,
     };
-    let rating = null;
+    let rating = saved.rating ?? null;
 
     const question = el('p', 'feedback-question', 'Teachers: how did it go?');
     const faces = el('div', 'feedback-faces');
@@ -1229,15 +1229,19 @@
       btn.type = 'button';
       btn.onclick = () => {
         rating = option.value;
-        onRated();
-        buttons.forEach(b => b.classList.toggle('chosen', b === btn));
+        remember({ token, rating });
         postFeedback({ ...about, rating });
-        fitQuestions();
-        addComment.hidden = false;
+        showRated();
       };
       faces.append(btn);
       return btn;
     });
+    const showRated = () => {
+      buttons.forEach((b, i) => b.classList.toggle('chosen', FEEDBACK_RATINGS[i].value === rating));
+      fitQuestions();
+      addComment.hidden = false;
+    };
+    if (rating !== null) showRated();
 
     const email = document.createElement('input');
     email.type = 'email';
@@ -1257,6 +1261,7 @@
     send.onclick = () => {
       send.disabled = true;
       markAsked();
+      remember({ token, rating, sent: true });
       postFeedback({
         ...about, rating,
         issues: [...issues],
@@ -1328,12 +1333,14 @@
   /* The question inside a game: under a good bingo card, and on the screen a
    * game ends on. These are the moments a teacher who never reopens the room is
    * sure to reach, and they ask for nothing but an optional tap, so there is no
-   * monthly limit: every game asks, again on each good card until a face is
-   * tapped. The game itself remembers the tap, on its saved state, which is what
-   * keeps a second winner from making a second answer about the same game.
+   * monthly limit: every game asks, again on each good card until the form is
+   * sent. A face with nothing after it may just be a teacher with a class to get
+   * back to, so it comes back chosen, with the way on to the form still there.
+   * The game keeps its token and rating on its saved state, which is what makes
+   * a second winner's tap a change to the same answer rather than another one.
    */
-  function feedbackForGame(room, rated, onRated) {
-    return rated ? null : feedbackAsk(room, 'game', onRated);
+  function feedbackForGame(room, saved, remember) {
+    return saved?.sent ? null : feedbackAsk(room, 'game', saved, remember);
   }
 
   /* Where a buyer leaves feedback: every purchase on one page, each with its own
@@ -1363,7 +1370,7 @@
    * ask would be for a review of their own work. A game they CLAIMED from a
    * pack keeps the ask: that one really was bought.
    */
-  function afterGame(room, rated, onRated) {
+  function afterGame(room, saved, remember) {
     const wrap = el('div', 'after-game');
     if (!(room && (room.demo || room.madeHere))) {
       const ask = el('a', 'review-cta');
@@ -1379,7 +1386,7 @@
       );
       wrap.append(ask);
     }
-    const feedback = feedbackForGame(room, rated, onRated);
+    const feedback = feedbackForGame(room, saved, remember);
     if (feedback) wrap.append(feedback);
     wrap.append(moreGames());
     const back = backToMyGames(room);
