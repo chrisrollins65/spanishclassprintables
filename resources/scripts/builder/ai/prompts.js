@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/ai/prompts.js (commit 9bae0d3) by its
+ * Copied from the packet builder's src/ai/prompts.js (commit a34a4b7) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -434,12 +434,16 @@ const PAGE_DESCRIPTIONS = {
  * this store's descriptions look, and a second copy of them would drift the
  * first time either one was edited.
  */
-const LISTING_HTML_RULES = `  EMOJI: use them as small section icons only - one at the start of each section
+/* The emoji rule is the worksheets' own. The game listings dropped it: an emoji
+ * on every <li> is half of what made them read as machine-written, and they
+ * carry their own, sparer rule (GAME_LISTING_VOICE). */
+const LISTING_EMOJI_RULES = `  EMOJI: use them as small section icons only - one at the start of each section
   header, each <li>, and the review line, and nowhere else. Never two in a row,
   never mid-sentence, never in the title. Pick ones that match the theme and the
   page (🍎 for a food pack, 🔍 for the word search, ✏️ for the crossword,
-  🔑 for the answer key). They are decoration, not vocabulary.
-  TpT's editor supports ONLY these tags: <p> <strong> <em> <u> <ul> <ol> <li>. It has no headings, no font sizes and no colours, so never use <h1>-<h6>, <span>, style attributes, markdown or asterisks.
+  🔑 for the answer key). They are decoration, not vocabulary.`;
+
+const LISTING_HTML_RULES = `  TpT's editor supports ONLY these tags: <p> <strong> <em> <u> <ul> <ol> <li>. It has no headings, no font sizes and no colours, so never use <h1>-<h6>, <span>, style attributes, markdown or asterisks.
   Bold section labels and key phrases only - bolding everything defeats the purpose.
   Do NOT add blank paragraphs, <br> tags or &nbsp; to create spacing. Write the
   blocks back to back; the builder inserts the blank lines between them.`;
@@ -584,6 +588,7 @@ WRITE THE LISTING
        "💛 <strong>Enjoyed this resource?</strong> Please leave a review! Your
        feedback helps other teachers find it and earns you TpT credits toward
        your next purchase."
+${LISTING_EMOJI_RULES}
 ${LISTING_HTML_RULES}
 - description: leave this field out entirely. The builder derives the plain-text
   fallback from descriptionHtml, so the two can never drift apart.
@@ -1593,7 +1598,8 @@ const GAME_LISTING_FACTS = {
   ],
   bingo: [
     'Plays in any web browser on the classroom projector or smartboard: open spanishclassprintables.com and type the code from the Play Online sheet that comes with the download. Nothing to install and no student accounts or devices — students play on printed cards.',
-    'The website is the caller: it draws the words in a random order and shows each one as a clue, never the Spanish word itself. The teacher chooses the clue: the English word, a Spanish sentence with a gap, a Spanish definition, or a mix — easier to harder.',
+    // The caller fact (which clues the site can show) is built from the deck
+    // type in buildGameListingPrompt — see bingoCallerFact.
     'It can read each clue aloud, at an adjustable speed, and repeat it.',
     'The whole word list goes up on screen to review before the game, with the English beside each word and every word said aloud in Spanish when it is tapped, so the class can go through it together without printing the word list. The same list opens again at any moment during the game as a quick reminder, with the English one tap away, and can be set to close itself after thirty seconds so that a look at the words does not become a break in the game.',
     'The review also runs as flashcards, one word at a time: a card starts in Spanish (hear it, say it back) or in English (the class says the Spanish before the card turns), in list order or shuffled. It can run by itself, saying each word and pausing for the class to repeat it, so the teacher is free to walk the room. The automatic voice can be switched off, and any word can still be heard with one tap.',
@@ -1605,15 +1611,96 @@ const GAME_LISTING_FACTS = {
   ],
 };
 
+/* What a bingo clue can be, per deck type, in a shopper's words.
+ *
+ * The caller fact used to be one hardcoded sentence promising "the English word,
+ * a Spanish sentence with a gap, a Spanish definition" — the vocabulary deck's
+ * three. A grammar bingo was sold on a definition it does not have and silent
+ * on the formula it does. Built from `clueTypes`, it says what the site will
+ * actually offer the teacher for this pack.
+ */
+const BINGO_CLUE_PHRASES = {
+  en: { vocabulario: 'the English word', forma: 'the English of the form ("I spoke")', palabra: 'the English ("when", "for")' },
+  prompt: { forma: 'a formula naming the person, the verb and the tense ("yo + hablar, pretérito")' },
+  sentence: { default: 'a Spanish sentence with the answer missing' },
+  definition: { vocabulario: 'a short Spanish definition', palabra: 'a short Spanish line saying what the word does' },
+};
+
+function bingoCallerFact(type) {
+  const phrases = type.clueTypes
+    .map(c => (BINGO_CLUE_PHRASES[c] || {})[type.id] || (BINGO_CLUE_PHRASES[c] || {}).default)
+    .filter(Boolean);
+  return `The website is the caller: it draws the answers in a random order and shows each one as a clue, never the answer itself. The teacher chooses the clue: ${phrases.join(', ')}, or a mix, easier to harder.`;
+}
+
+/* Which VERSION of the game this is, said plainly.
+ *
+ * A teacher looking at three Halloween-shaped listings could not tell a
+ * vocabulary pack from a grammar one from a translation one, and neither could
+ * the seller's own first reader — the listings described the website at length
+ * and never said what the class would be asked to DO. This is that sentence,
+ * per type: what the answers are, what a student does to reach one, and what
+ * that practises. Checked against deckTypes.js; change a type, change its line.
+ */
+const GAME_LISTING_VERSIONS = {
+  vocabulario: 'This is the VOCABULARY version. The class learns the words on the Word List, and every answer in the game is one of those words: a clue in English or in simple Spanish points at a word, and the students have to come up with the Spanish word it means.',
+  forma: 'This is a GRAMMAR version, for the one structure the theme names. The answers are not vocabulary words but FORMS of words (hablé, comimos, pon, altas), so a student cannot answer by recognising a word. They have to work out the right form (who is doing it and when, or which ending agrees) and produce it. It is the grammar drill a worksheet would give, played as a game.',
+  palabra: 'This is a GRAMMAR version, for the small words that hold Spanish sentences together: prepositions, question words, pronouns and the like (por, para, dónde, nos). Every answer is one of those little words, and most clues are a Spanish sentence where only one of them makes sense, so students practise WHEN each word is used, not just what it translates to.',
+  frase: 'This is the TRANSLATION version, made for middle and high school classes, roughly Spanish 2 and 3. There is no single word to find: teams build WHOLE Spanish sentences, from the English, from hearing them read aloud (a dictation), or with a change applied ("make it plural"). It practises word order and agreement, the part of Spanish that single-word games never reach. A sentence can often be translated more than one way, so the teacher judges close answers. It is a quiz game only; there is no bingo version.',
+};
+
+/* What happens in the room, in order. The listings had none of this, and it is
+ * the first thing a teacher who has never seen the site needs. */
+function gameRoundSteps(kind, type, hasFinal) {
+  if (kind === 'bingo') {
+    return [
+      'Every student gets a printed bingo card. Every card is different and numbered.',
+      'The website draws an answer and shows a clue for it on the projector, never the answer itself. It can read the clue aloud.',
+      'Students work out the answer and mark it if it is on their card.',
+      'A full line or a full card wins. The teacher types the card number and the site says whether it really wins.',
+    ];
+  }
+  const answer = type.id === 'frase' ? 'a Spanish sentence (or, on one row, its English)' : 'the answer';
+  return [
+    'Split the class into teams, 2 to 8. Each team gets an answer sheet.',
+    'A team picks a square on the board: a category and a value. Higher values are harder clues.',
+    `The clue appears on the screen, or on some rows is read aloud and not shown. EVERY team writes ${answer} on its sheet, not only the team that picked.`,
+    'The teacher reveals the answer and taps the teams that got it right. The website keeps every score.',
+    ...(hasFinal ? ['When the board is empty, every team bets on one last clue (La Apuesta Final), and that decides the game.'] : []),
+  ];
+}
+
+/* How the listings should SOUND.
+ *
+ * Shoppers on TpT have learned to spot machine-written copy, and many skip it on
+ * sight. The tells are well known and almost all of them were in the old game
+ * listings: an emoji on every bullet, a bold "Label:" opening every bullet, three
+ * adjectives where one fact would do, and a vocabulary nobody uses out loud
+ * ("seamless", "engaging", "elevate"). Naming them works better than asking for
+ * a "natural tone", which a model already believes it has.
+ */
+const GAME_LISTING_VOICE = `VOICE. Many teachers on TpT skip anything that reads as AI-written, and some refuse to buy it. Write the way a working Spanish teacher describes a game to a colleague down the hall: plain, specific, a little dry, with nothing to prove.
+  - Short sentences. Contractions are fine ("you'll", "it's", "doesn't").
+  - Concrete beats adjectival. Say what the screen shows, what the kids write, how many cards. A number or a real example from this pack does the work an adjective only claims to.
+  - Never use these words or anything like them: engaging, interactive, immersive, dynamic, seamless, effortless, elevate, enhance, boost, foster, ensure, unlock, unleash, transform, dive into, game-changer, ultimate, perfect for, must-have, comprehensive, robust, spark, bring to life, take it to the next level, journey.
+  - Never these shapes: "Whether you're ... or ...", "Not just X, but Y", "It's not X, it's Y", "Looking for ...?", "Say goodbye to ...", "Look no further". No rhetorical questions at all.
+  - No list of three adjectives, and no sentence that only praises.
+  - At most ONE exclamation mark and at most ONE em dash in the whole description. Use a full stop or a comma instead.
+  - Never claim a feeling you cannot know: no "students love", "teachers love", "kids beg to play it".
+  - Emoji: one on the headline and one on each section label, and nowhere else. Never inside a list item, never inside a sentence.
+  - Do NOT start list items with a bolded label and a colon. Repeated down a list, that is the most recognisable AI layout there is. Bold only the page names in the download list and, once or twice, a phrase that really matters.`;
+
 function buildGameListingPrompt(pack) {
   const {
     kind, theme, words = [], pageCount, customCategory = '', demoUrl = '',
     cardCount = 0, cardSizes = '', cardPages = 0, clueCount = 0, categoryNames = [],
+    hasFinal = true,
   } = pack;
   const isQuiz = kind === 'quiz';
   /* The ladder fact is generated from the pack's own deck type and goes first,
-   * where the hardcoded one used to sit. */
-  const type = deckType(pack.type);
+   * where the hardcoded one used to sit. The level rides along so the grade band
+   * below is the one the listing is stamped with. */
+  const type = deckType(pack.type, pack.level);
   /* A deck whose answers are open says so in the listing.
    *
    * A buyer who expects the screen to mark every answer right or wrong, and
@@ -1622,18 +1709,40 @@ function buildGameListingPrompt(pack) {
   const marking = type.answerIsOpen
     ? ['Some sentences can be translated more than one way, and the teacher decides: the screen shows one correct answer and tells the class another may count, which turns a near miss into a moment to explain why a different wording works. The game keeps the score either way.']
     : [];
+  /* A sentence deck's study sheet is a glossary, because its bank is the
+   * answers (see `reference` on FRASE). Told only "Lista de Palabras, to study
+   * before playing", the model sold it as "the 26 sentences to study" — a
+   * promise to print the answer key for the class. */
+  const glossary = (type.itemsAlso || '').includes('"reference"')
+    ? ['In this version the Lista de Palabras (Word List) is a glossary of the words the sentences are built from, NOT the sentences themselves: the sentences are the answers, so they are never printed for the class.']
+    : [];
   const factList = isQuiz
-    ? [ladderFact(type), ...marking, ...(GAME_LISTING_FACTS[kind] || [])]
-    : (GAME_LISTING_FACTS[kind] || []);
+    ? [ladderFact(type), ...marking, ...glossary, ...(GAME_LISTING_FACTS[kind] || [])]
+    : [bingoCallerFact(type), ...(GAME_LISTING_FACTS[kind] || [])];
   const facts = factList.map(f => `- ${f}`).join('\n');
+  const steps = gameRoundSteps(kind, type, hasFinal).map((s, i) => `  ${i + 1}. ${s}`).join('\n');
+  const version = GAME_LISTING_VERSIONS[type.id] || GAME_LISTING_VERSIONS.vocabulario;
+  // The band the listing is stamped with (gradeLevelsFor), so the copy and the
+  // Grade Levels field cannot disagree. It used to say "grades 2 to 8" for
+  // every pack, sentence decks included.
+  const years = gradeLevelsFor(kind, type.id, type.level).map(g => parseInt(g, 10)).filter(n => !isNaN(n));
+  const grades = years.length ? `grades ${Math.min(...years)} to ${Math.max(...years)}` : 'grades 3 to 9';
   const vocabList = words.map(w => `${w.es} (${w.en})`).join(', ');
+  // What the bank IS, so a pack of thirty forms of ten verbs is not described
+  // as "30 verbs", and a deck of sentences not as "26 words".
+  const bankLabel = { forma: 'Forms', palabra: 'Little words', frase: 'Sentences (the answers)' }[type.id] || 'Vocabulary';
   const counts = isQuiz
     ? `Board: ${categoryNames.length} categories (${categoryNames.join(', ')}), ${clueCount} clues.`
     : `Cards: ${cardCount} different cards, in ${cardSizes} sizes, on ${cardPages} of the ${pageCount} pages. The larger size is the full game; the smaller gives quicker games for younger classes.`;
   const format = isQuiz ? 'Jeopardy Style Review Game' : 'Bingo Game';
+  // The demo room is a vocabulary game, so for any other version it shows how
+  // the game RUNS, not what this pack asks — and the listing has to say so.
+  const demoNote = type.id === 'vocabulario'
+    ? 'it is a free demo with sample words, not the words in this pack'
+    : 'it is a free demo of how the game runs, using sample vocabulary, so it does not show the kind of clues this pack asks';
   const demoLine = demoUrl
-    ? `    3. A <p> inviting the teacher to try it first, opening with one emoji, bolding the invitation, and giving this exact address as plain text: ${demoUrl} . Say it is a free demo with sample words, not the words in this pack.`
-    : `    3. (No demo is available — skip this section.)`;
+    ? `    5. One <p>, one or two sentences: try it before buying, at this exact address as plain text: ${demoUrl} . Say ${demoNote}.`
+    : `    5. (No demo is available — skip this section.)`;
   const trademark = isQuiz
     ? ` "Jeopardy Style" is how teachers search for this kind of game, and it describes the format; never write "Jeopardy" on its own, "Jeopardy!", or anything that reads as the name of the TV show — this is not affiliated with it.`
     : '';
@@ -1645,13 +1754,21 @@ Game: ${isQuiz ? 'a Jeopardy style team quiz' : 'bingo'}
 Theme: "${theme}"
 Total pages: ${pageCount}
 ${counts}
-Vocabulary (${words.length} words): ${vocabList}
+${bankLabel} (${words.length}): ${vocabList}
+
+WHICH VERSION THIS IS — the store sells a vocabulary version, two grammar
+versions and a translation version of these games, and a teacher has to be able
+to tell them apart from the description alone:
+${version}
+
+HOW A ROUND GOES, in order:
+${steps}
 
 WHAT IT DOES — these are the ONLY features you may describe. Do not add any
-other feature, and do not exaggerate these.
+other feature, and do not exaggerate these. You will use only a few of them.
 ${facts}
 
-The children are English speakers learning Spanish, grades 2 to 8.
+The students are English speakers learning Spanish, ${grades}.
 
 WRITE THE LISTING
 - title: ${LIMITS.titleChars} characters at the very most - TpT's Title field stops
@@ -1669,30 +1786,44 @@ WRITE THE LISTING
   When it will not fit, drop the Spanish topic first. Never abbreviate the topic,
   and never pad with "Printable", "Fun", "Engaging", "No-Prep" or "TPT".
 
-- descriptionHtml: 250-400 words of HTML, written to be SCANNED not read. In this order:
-    1. A bold bilingual headline as its own paragraph, opening with one emoji:
-       <p><strong>🎉 <an inviting line about playing ${theme} in Spanish class> | <the theme in Spanish></strong></p>
-    2. A <p> hook: what the game is, that the whole class plays together from the
-       projector, and when to use it. Name the real-world date or occasion if the
-       theme has one. Bold <strong>no-prep</strong> in it.
+- descriptionHtml: 170-260 words of HTML. LESS IS THE POINT. The old listings
+  ran past 400 words and listed every feature, and a teacher who reads that
+  still could not say what the game asks of their class. The reader should finish
+  knowing three things: which version this is, what happens in the room, and
+  what they download. Everything else is in the demo. In this order:
+    1. A bold headline as its own paragraph, opening with one emoji, saying
+       plainly what this is: the theme, the version and the game. No hype, no
+       exclamation mark. Two examples of the SHAPE, not wording to copy:
+       <p><strong>🎃 Halloween vocabulary bingo, called from your projector</strong></p>
+       <p><strong>📝 Preterite -ar verbs as a team quiz where every answer is a form they build</strong></p>
+    2. One <p>, two or three sentences: the version, in the teacher's terms,
+       from WHICH VERSION THIS IS, with 3-5 real examples from the vocabulary
+       above so they can see the level at a glance. Say it is
+       <strong>no-prep</strong>. Name the real-world date or occasion only if
+       the theme has one.
+    3. <p><strong><one emoji> How it plays</strong></p> then an <ol> of the steps
+       in HOW A ROUND GOES, rewritten in your own plain words, one short
+       sentence each. You may fold in what the clues ask, from WHAT IT DOES
+       (the climb in difficulty, which clues are heard) as one of the steps or
+       one sentence after the list; a teacher needs that to picture the game.
+    4. <p><strong><one emoji> What the website handles</strong></p> then a <ul>
+       of the THREE OR FOUR facts from WHAT IT DOES that a teacher would care
+       about most for THIS version, one plain sentence each. Leave the rest
+       out; do not merge several into one long item to squeeze them in. Always
+       include, somewhere in the description, that it needs only a projector and
+       a browser, with no student devices or accounts, and that the printed
+       pages run the whole game on paper if the tech fails.
 ${demoLine}
-    4. <p><strong>🖥️ How It Works</strong></p> then a <ul> of the online features
-       from WHAT IT DOES, one <li> each, each opening with one emoji and a bolded
-       label and a colon.
-    5. <p><strong>📚 What's Included?</strong></p> then a <ul>, one <li> per printed
-       page type and one for the online game, each opening with one emoji, then
-       the name in <strong> in BOTH languages - <strong>Word List (Lista de
-       Palabras)</strong> - then a colon and a short description. Use the page
-       names EXACTLY as WHAT IT DOES gives them: a buyer looks for these names in
-       the PDF, so a translated or reworded name is a page they cannot find. Use
-       the CONCRETE COUNTS from GAME DETAILS. In the word list item, name 5-7 real
-       example words from the vocabulary.
-    6. <p><strong>⭐ Why Teachers Love It:</strong></p> then a <ul> of exactly three
-       <li> benefits, each opening with one emoji and a bolded label and a colon.
-       Concrete: review days, sub plans, the last day before a break.
-    7. A closing <p> asking for a review, warm and varied rather than copied,
-       opening with an emoji, bolding the ask, and saying why it helps the
-       teacher - it earns them TpT credits and helps other teachers find it.
+    6. <p><strong><one emoji> In the download</strong></p> then a <ul>, one short
+       <li> per printed page (and one for the online game), no more than about
+       ten words each. Give the name in <strong> in BOTH languages, exactly as
+       WHAT IT DOES names it - <strong>Lista de Palabras (Word List)</strong> -
+       because a buyer looks for these names in the PDF, and a reworded name is a
+       page they cannot find. Use the CONCRETE COUNTS from GAME DETAILS.
+    7. One closing <p>, two sentences at most: when it is handy (a review day, a
+       sub day, the day before a break - pick what fits this version), and a
+       short, plain request for a review if it worked for them.
+${GAME_LISTING_VOICE}
   NEVER print a room code, and never give any web address except
   spanishclassprintables.com${demoUrl ? ' and the demo address above' : ''}. The code for this pack is
   printed only on the teacher pages, because it opens every answer.

@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/shared/wordsPrompt.js (commit 9bae0d3) by its
+ * Copied from the packet builder's src/shared/wordsPrompt.js (commit a34a4b7) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -45,12 +45,24 @@
     '- Appropriate for ' + AUDIENCE + ', with a mix of easy and moderate difficulty.',
   ].join('\n');
 
+  // Not in WORD_RULES: a song's lyrics pages blank a word by finding its exact
+  // spelling in the line (placeBlanks in songLyrics.js), so 'mover' never matches
+  // 'mueve'. A song keeps the lyric's own form; everything else gets one base form.
+  var FORM_RULE = '- A noun goes in the singular, a verb in the infinitive, an adjective in the masculine singular.';
+  var SONG_FORM_RULE = '- Write each word exactly as it is spelled in the lyrics, conjugated or plural, never a dictionary form: the worksheet finds it in the song by its exact spelling.';
+
   function buildCreativeWordsPrompt(topic, count, sourceType, lyrics) {
     count = count || 20;
     sourceType = sourceType || 'general';
     var intro = 'You are a Spanish language teacher creating printable vocabulary puzzle worksheets for ' + AUDIENCE + '.';
 
     if (sourceType === 'song') {
+      // This test lives here and not in WORD_RULES on purpose. Lyrics are the
+      // one source that hands the model hard words ready-made - "martirio" came
+      // straight out of La Llorona. Moved into WORD_RULES it cost general topics
+      // their point: a Las Fallas list came back without the word "falla". It
+      // favors what is specific to the song rather than what is common, because
+      // "first-year Spanish" as the bar traded the song's own words for colors.
       var lyricsSection = '';
       if (lyrics && lyrics.es) lyricsSection += '\nSpanish lyrics:\n' + lyrics.es + '\n';
       if (lyrics && lyrics.en) lyricsSection += '\nEnglish translation:\n' + lyrics.en + '\n';
@@ -61,8 +73,8 @@
 
       return intro + '\n\nThe student is learning vocabulary from the song: "' + topic + '"\n' + lyricsSection +
         '\nGenerate a list of ' + count + ' Spanish vocabulary words from this song.\n\nRequirements:\n' +
-        '- Take the words from the lyrics wherever you can. A lyric gives you the word in context, so it is the best source - but when a word from the lyrics cannot meet the rules below, pick a different word from the song rather than bending them.\n' +
-        WORD_RULES + '\n- Include a proper title for this song' + songExtras +
+        '- Take the words from the lyrics. Favor the concrete things that make this song itself - its people, places, objects and nature - as long as a 10-year-old can picture them and knows the English. Being in the song does not earn a word its place, however famous its line: skip abstract or literary words and religious ideas ("martirio", "destino"), and keep at most one word that exists only inside one culture.\n' +
+        WORD_RULES + '\n' + SONG_FORM_RULE + '\n- Include a proper title for this song' + songExtras +
         '\n\nReturn exactly ' + count + ' words.';
     }
 
@@ -71,12 +83,12 @@
       return intro + '\n\nGenerate a list of ' + count + ' Spanish vocabulary words related to the ' +
         typeLabel + ': "' + topic + '"\n\nRequirements:\n' +
         '- Words should be relevant to the story, characters, settings, or themes of "' + topic + '"\n' +
-        WORD_RULES + '\n- Include a proper Spanish theme/title' +
+        WORD_RULES + '\n' + FORM_RULE + '\n- Include a proper Spanish theme/title' +
         '\n\nReturn exactly ' + count + ' words.';
     }
 
     return intro + '\n\nGenerate a list of ' + count + ' Spanish vocabulary words related to the topic: "' +
-      topic + '"\n\nRequirements:\n' + WORD_RULES +
+      topic + '"\n\nRequirements:\n' + WORD_RULES + '\n' + FORM_RULE +
       '\n- Include a proper Spanish theme/title for the topic\n\n' +
       'Example for the topic "Spring":\n' +
       '{\n' +
