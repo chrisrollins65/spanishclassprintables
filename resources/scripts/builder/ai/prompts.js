@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/ai/prompts.js (commit a34a4b7) by its
+ * Copied from the packet builder's src/ai/prompts.js (commit d668368) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -878,7 +878,37 @@ const ASSUMES_QUESTION = `"assumes": true when the answer is a custom, dish, dec
   Says what it is: "Es un dulce blanco con forma de cabeza de esqueleto."
 False for an everyday answer (a table, water, to dance) and for any clue that says what the thing is. Leave it out when false.`;
 
-function buildGapAuditPrompt(items, type = deckType()) {
+/* The audits' fifth question: does a clue's scene belong to its topic?
+ *
+ * The other four take the topic as given and never saw it — the prompts were
+ * handed the words and the clues, not the theme — so a clue could pass all four
+ * and still be set at the wrong time of year. The Thanksgiving pack shipped
+ * «Pongo una ___ grande y anaranjada en la puerta de mi casa» for calabaza,
+ * which is a Halloween porch, and five clues about soup, which is a weeknight
+ * and not the holiday. Every one pointed at its own word; none was a defect any
+ * question could name.
+ *
+ * Kept narrow on purpose, for the reason hardQuestion says what does NOT count:
+ * a description says what a thing IS and is right to be the same in every pack,
+ * and on a topic that is not an occasion the everyday scene is the topic. Asked
+ * of those, it would flag half the bank and bury the two cases it is for.
+ *
+ * Only asked when a topic is given, so a caller that has none gets the four
+ * questions it always got. The examples are deliberately not from the pack that
+ * prompted it, so a test against that pack measures the question, not a match.
+ */
+function sceneQuestion(topic) {
+  return `"offTopic": this pack's topic is «${topic}». Set it to true in only two cases:
+  - The clue sets its answer in a scene from a DIFFERENT holiday, occasion or season, so a child pictures the wrong one. In a Christmas pack, «Me pongo un ___ de pirata y pido dulces de casa en casa» is Halloween.
+  - The topic IS an occasion (a holiday, a celebration, a season) and a [gap] clue's scene has nothing of it — it could move into any other pack unchanged. In a Christmas pack, «Mi papá lava el ___ los sábados» is any weekend; «Llevamos el árbol a casa encima del ___» is the holiday.
+  Do NOT set it for:
+  - a [description] clue that says what the thing is, shape, use or material — "Tiene cuatro ruedas y lo manejas" is right to be the same in every pack;
+  - any clue when the topic is not an occasion (the house, the body, animals, the city) — there the everyday scene IS the topic;
+  - a scene that fits the occasion without naming it — a family dinner, a cold morning, a trip to see the grandparents.
+  Most clues are false; leave it out when false. Listing more than one clue in five means you are listing ordinary clues.`;
+}
+
+function buildGapAuditPrompt(items, type = deckType(), topic = '') {
   const bank = items.map(i => i.face).join(', ');
   const entries = auditEntries(items);
   const numbered = entries
@@ -894,7 +924,7 @@ Below are the clues. A [gap] clue is a sentence with the answer replaced by ___.
 
 ${numbered}
 
-For EACH clue answer FOUR separate questions.
+For EACH clue answer ${topic ? 'FIVE' : 'FOUR'} separate questions.
 
 1. "fits": which words from the list above the clue could point at — for a gap, which could fill it; for a description, which it could describe. Judge only against the list. A clue is fine when exactly one does; two or more means a child holding a card has two right answers and no way to choose.
 
@@ -903,7 +933,7 @@ For EACH clue answer FOUR separate questions.
 3. ${hardQuestion('"Objeto duro que se pone para no lastimarse el cráneo" for "casco" is hard because of "cráneo" and "lastimarse".')}
 
 4. ${ASSUMES_QUESTION}
-
+${topic ? `\n5. ${sceneQuestion(topic)}\n` : ''}
 Return your response as JSON in this format:
 {"checks": [{"n": 1, "fits": ["luna"], "specific": true, "hard": []}, {"n": 2, "fits": ["casco"], "specific": true, "hard": ["cráneo", "lastimarse"]}, {"n": 3, "fits": ["piñata"], "specific": true, "hard": [], "assumes": true}]}
 Include every clue. Only return valid JSON, nothing else.`;
@@ -1364,7 +1394,7 @@ Leave out any list with nothing in it. Only return valid JSON, nothing else.`;
  * specificity is the main one here rather than the second, since there is no
  * list to fall back on.
  */
-function buildBoardAuditPrompt(categories, final, type = deckType()) {
+function buildBoardAuditPrompt(categories, final, type = deckType(), topic = '') {
   const entries = boardAuditEntries(categories, final, type);
   const answers = [...new Set((categories || [])
     .flatMap(c => (c.clues || []).map(q => q.answer))
@@ -1385,7 +1415,7 @@ Below are the clues. A [gap] clue is a sentence with the answer replaced by ___.
 
 ${numbered}
 
-For EACH clue answer FOUR separate questions.
+For EACH clue answer ${topic ? 'FIVE' : 'FOUR'} separate questions.
 
 1. "fits": which answers from the list above the clue could point at. Exactly one is fine. Two or more means the screen will mark a team wrong for an answer that was just as good as the intended one.
 
@@ -1394,7 +1424,7 @@ For EACH clue answer FOUR separate questions.
 3. ${hardQuestion('"Son cables con bombillas de colores que brillan por la noche" for "luces" is hard because of "cables" and "bombillas". Judge a [heard, not shown] clue more strictly - there is no text to puzzle over, so a single unknown word can sink the whole sentence.')}
 
 4. ${ASSUMES_QUESTION}
-
+${topic ? `\n5. ${sceneQuestion(topic)}\n` : ''}
 Return your response as JSON in this format:
 {"checks": [{"n": 1, "fits": ["árbol"], "specific": true, "hard": []}, {"n": 2, "fits": ["luces"], "specific": true, "hard": ["cables", "bombillas"]}, {"n": 3, "fits": ["piñata"], "specific": true, "hard": [], "assumes": true}]}
 Include every clue. Only return valid JSON, nothing else.`;

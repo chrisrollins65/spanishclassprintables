@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/bingoCards.js (commit a34a4b7) by its
+ * Copied from the packet builder's src/bingoCards.js (commit d668368) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */

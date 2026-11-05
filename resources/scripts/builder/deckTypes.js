@@ -1,6 +1,6 @@
 /* GENERATED — do not edit here.
  *
- * Copied from the packet builder's src/deckTypes.js (commit a34a4b7) by its
+ * Copied from the packet builder's src/deckTypes.js (commit d668368) by its
  * scripts/sync-site-shared.js. Edit it there and run that script again; an
  * edit made here is lost the next time anyone does.
  */
@@ -128,7 +128,8 @@ const VOCABULARIO_CLUE_RULES = `- A clue must be EASIER than its answer. Apart f
   This bites hardest where the pack holds a family of similar words — people, places, foods — that share one scene. There, name the relation or the property, never the scene.
 - EXPLAIN A CULTURE WORD; DO NOT ASSUME IT. The children have never seen this topic's customs, foods or places outside this lesson. A clue that only works for someone who already knows the thing does not work: say what it is — its shape, what it is made of, what it is for — in easy words.
   Assumes it: "Hay una ___ blanca y dulce con el nombre en la frente." (la calavera de azúcar)
-  Explains it: "Es un dulce blanco con forma de cabeza de esqueleto."`;
+  Explains it: "Es un dulce blanco con forma de cabeza de esqueleto."
+- SET THE SCENE IN THE TOPIC. A gap sentence gives its word a moment, so when the topic is a holiday, a celebration or a season, give it that one, not any day's and never another occasion's. Fork, pot and bread are everyday words, but in a Christmas pack their sentences are at the Christmas table, not at a weekday lunch. A definition says what the thing IS and stays the same in any pack.`;
 
 /* True of every type: a category is a theme, never a kind of question.
  *
