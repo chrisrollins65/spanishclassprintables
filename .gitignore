@@ -3,6 +3,7 @@
 .env
 .env.*
 !.env*.encrypted
+!.env.example
 .phpactor.json
 .phpunit.result.cache
 /.codex
