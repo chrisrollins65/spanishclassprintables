@@ -29,7 +29,7 @@ return [
         'source' => [
             'files' => [
                 /*
-                 * base_path() is a Capistrano release directory, and the
+                 * base_path() is a Deployer release directory, and the
                  * storage symlink inside it is not followed. The stock config
                  * suggests adding storage_path() here for exactly that reason;
                  * it is left out on purpose — see the exclusions below.

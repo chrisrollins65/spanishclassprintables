@@ -36,7 +36,7 @@ class InternalPinAssetController extends Controller
 {
     /**
      * Where the pins land on the public disk, and so under /storage/<dir>/.
-     * `storage` is a Capistrano linked dir and `storage:link` runs on every
+     * `storage` is a Deployer shared dir and `storage:link` runs on every
      * deploy, so a pin pushed before a deploy is still there after it.
      */
     private const DIRECTORY = 'tpt-pins';

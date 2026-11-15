@@ -1,0 +1,187 @@
+name: CI
+
+# Every push and PR runs the tests. A push to master that passes them deploys to
+# production. "Run workflow" in the Actions tab can redeploy or roll back by hand.
+#
+# Skipping a deploy:
+# - A push that only touches files deploy.php never uploads (.ai, .claude, docs)
+#   doesn't run at all.
+# - Put [skip deploy] in the commit message (the merge commit's, when merging a PR)
+#   to run the tests but not deploy.
+# - [skip ci] anywhere in the commit message skips the whole workflow (GitHub built-in).
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '.ai/**'
+      - '.claude/**'
+      - 'docs/**'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Deployer task to run
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, intl, gd, zip, pdo_sqlite, pdo_mysql
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Find Composer cache
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --no-progress --prefer-dist
+          npm ci
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Prepare app
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Check formatting
+        run: vendor/bin/pint --test
+
+      - name: Run tests
+        run: php artisan test
+
+  deploy:
+    needs: test
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip deploy]')))
+    runs-on: ubuntu-latest
+    # Never run two deploys at once; a newer push waits for the current deploy to finish.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, intl, gd, zip
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Only saves download time: composer still installs everything fresh from
+      # composer.lock, so a stale or missing cache can't change what gets deployed.
+      - name: Find Composer cache
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      # Installed globally because the release's vendor/ is built --no-dev.
+      - name: Install Deployer
+        run: |
+          composer global require deployer/deployer:^8.0 --no-interaction --no-progress
+          echo "$(composer global config bin-dir --absolute --quiet)" >> "$GITHUB_PATH"
+
+      # node_modules/ ships with the release (Browsershot needs puppeteer on the
+      # server), so it's pruned to production packages once Vite has built.
+      - name: Build the release
+        run: |
+          composer install --no-dev --no-interaction --no-progress --prefer-dist --optimize-autoloader
+          npm ci
+          npm run build
+          npm prune --omit=dev
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          LARAVEL_ENV_ENCRYPTION_KEY: ${{ secrets.LARAVEL_ENV_ENCRYPTION_KEY }}
+        run: dep ${{ inputs.task || 'deploy' }} production -v
+
+  # A Telegram message when anything fails or a deploy finishes. Quiet when the
+  # tests pass without deploying. Needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.
+  notify:
+    needs: [test, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Telegram message
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST: ${{ needs.test.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          TASK: ${{ inputs.task || 'deploy' }}
+          COMMIT: ${{ github.event.head_commit.message || github.event.pull_request.title || 'Manual run' }}
+          REPO: ${{ github.event.repository.name }}
+          AUTHOR: ${{ github.actor }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$TOKEN" ] && [ -n "$CHAT_ID" ] || { echo "Telegram secrets not set, skipping"; exit 0; }
+
+          if [ "$TEST" = failure ]; then
+            title="❌ Tests failed on $BRANCH"
+          elif [ "$DEPLOY" = failure ]; then
+            title="❌ Production $TASK failed"
+          elif [ "$DEPLOY" = success ] && [ "$TASK" = rollback ]; then
+            title="↩️ Production rolled back"
+          elif [ "$DEPLOY" = success ]; then
+            title="✅ Deployed to production"
+          else
+            exit 0
+          fi
+
+          text="[$REPO] $title
+          ${COMMIT%%$'\n'*}
+          by $AUTHOR
+          $RUN_URL"
+
+          curl -sS --fail -o /dev/null "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$CHAT_ID" \
+            --data-urlencode "text=$text" \
+            --data-urlencode "disable_web_page_preview=true"
