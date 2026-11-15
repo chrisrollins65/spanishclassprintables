@@ -424,6 +424,7 @@ class GameEditTest extends TestCase
      */
     public function test_a_quiz_made_here_offers_the_team_answer_sheet(): void
     {
+        Queue::fake();
         $game = $this->quizGame();
 
         $this->assertTrue($game->answerSheetIsAvailable());
@@ -432,6 +433,8 @@ class GameEditTest extends TestCase
             ->postJson("/my-games/{$game->id}/answer-sheet")
             ->assertStatus(202)
             ->assertJsonPath('status', 'working');
+
+        Queue::assertPushed(RenderAnswerSheet::class, fn (RenderAnswerSheet $job): bool => $job->gameId === $game->id);
     }
 
     /**
