@@ -71,8 +71,17 @@ jobs:
       - name: Check formatting
         run: vendor/bin/pint --test
 
+      # The printables tests (group "chrome") render real PDFs. GitHub's Ubuntu
+      # runners come with Google Chrome; .npmrc stops puppeteer fetching its
+      # own. Ubuntu won't give Chrome the namespaces its sandbox needs, as on
+      # the droplet.
       - name: Run tests
-        run: php artisan test
+        env:
+          BROWSERSHOT_CHROME_PATH: /usr/bin/google-chrome
+          BROWSERSHOT_NO_SANDBOX: 'true'
+        run: |
+          test -x "$BROWSERSHOT_CHROME_PATH" || { echo "No Chrome at $BROWSERSHOT_CHROME_PATH"; exit 1; }
+          php artisan test
 
   deploy:
     needs: test
@@ -134,6 +143,17 @@ jobs:
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      # The server's env:decrypt fails without saying why (Deployer shows only
+      # the exit code), so try the key here first, where Laravel's own message
+      # ends up in the log and nothing has been uploaded yet.
+      - name: Check the .env key
+        env:
+          LARAVEL_ENV_ENCRYPTION_KEY: ${{ secrets.LARAVEL_ENV_ENCRYPTION_KEY }}
+        run: |
+          [ -n "$LARAVEL_ENV_ENCRYPTION_KEY" ] || { echo "The LARAVEL_ENV_ENCRYPTION_KEY secret is empty or missing"; exit 1; }
+          php artisan env:decrypt --env=production --key="$LARAVEL_ENV_ENCRYPTION_KEY" --path="$RUNNER_TEMP" --force
+          rm "$RUNNER_TEMP/.env.production"
 
       - name: Deploy
         env:
